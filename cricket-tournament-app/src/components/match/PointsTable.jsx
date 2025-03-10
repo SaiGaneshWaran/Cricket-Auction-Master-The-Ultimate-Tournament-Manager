@@ -1,4 +1,4 @@
-import {  AnimatePresence } from 'framer-motion';
+import {  motion,AnimatePresence } from 'framer-motion';
 import { useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import styles from './PointsTable.module.css';

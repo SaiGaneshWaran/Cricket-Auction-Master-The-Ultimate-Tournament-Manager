@@ -1,8 +1,9 @@
-import {  AnimatePresence } from 'framer-motion';
+import {  motion,AnimatePresence } from 'framer-motion';
 import { useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import LiveScoreboard from './LiveScoreboard';
 import styles from './MatchSimulator.module.css';
+
 
 const MatchSimulator = ({ matchDetails, onMatchComplete }) => {
   const [currentInnings, setCurrentInnings] = useState(1);

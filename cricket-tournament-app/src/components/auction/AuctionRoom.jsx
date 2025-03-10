@@ -1,8 +1,12 @@
-import {  AnimatePresence } from 'framer-motion';
+import {  motion,AnimatePresence } from 'framer-motion';
 import { useState, useEffect } from 'react';
 import BidHistory from './BidHistory';
 import TeamBalance from './TeamBalance';
 import styles from './AuctionRoom.module.css';
+
+import useLocalStorage from '../../hooks/useLocalStorage';
+import { getFromStorage,saveToStorage } from '../../store/localStorage';
+import { validateAuctionStatus } from '../../utils/auctionHelper';
 
 const AuctionRoom = () => {
   const [currentPlayer, setCurrentPlayer] = useState({
@@ -16,6 +20,29 @@ const AuctionRoom = () => {
   const [isAuctionActive, setIsAuctionActive] = useState(false);
   const [bidHistory, setBidHistory] = useState([]);
 
+  const [teams] = useLocalStorage('teams', []);
+  const [error, setError] = useState(null);
+  const [playerQueue, setPlayerQueue] = useState([]);
+  const [auctionStats, setAuctionStats] = useState({
+    totalPlayers: 0,
+    soldPlayers: 0,
+    totalAmount: 0
+  });
+
+  useEffect(() => {
+    const savedQueue = getFromStorage('playerQueue', []);
+    setPlayerQueue(savedQueue);
+    
+    // Load auction stats
+    const stats = getFromStorage('auctionStats', {
+      totalPlayers: savedQueue.length,
+      soldPlayers: 0,
+      totalAmount: 0
+    });
+    setAuctionStats(stats);
+  }, []);
+
+  // Existing useEffect for timer
   useEffect(() => {
     let interval;
     if (isAuctionActive && timer > 0) {
@@ -37,50 +64,59 @@ const AuctionRoom = () => {
     exit: { opacity: 0 }
   };
 
-  const playerCardVariants = {
-    hidden: { y: 50, opacity: 0 },
-    visible: { 
-      y: 0, 
-      opacity: 1,
-      transition: { type: "spring", stiffness: 300 }
-    },
-    exit: { 
-      y: -50, 
-      opacity: 0,
-      transition: { duration: 0.2 }
-    }
-  };
+  
   const handleNextPlayer = () => {
-    // Simulate fetching next player from queue
-    const nextPlayer = {
-      name: 'Test Player',
-      basePrice: 1000000,
-      id: Date.now()
-    };
+    if (playerQueue.length === 0) {
+      setError('No more players in queue');
+      return;
+    }
+
+    const nextPlayer = playerQueue[0];
+    const updatedQueue = playerQueue.slice(1);
+    
+    setPlayerQueue(updatedQueue);
+    saveToStorage('playerQueue', updatedQueue);
+    
     setCurrentPlayer(nextPlayer);
     setCurrentBid(nextPlayer.basePrice);
     setIsAuctionActive(true);
     setTimer(15);
+    setError(null);
   };
 
   const handleBid = (teamId, bidAmount) => {
+    // Validate team status
+    const validation = validateAuctionStatus(teamId);
+    if (!validation.canBid) {
+      setError(validation.message);
+      return;
+    }
+
     if (bidAmount > currentBid && isAuctionActive) {
+      const team = teams.find(t => t.id === teamId);
+      if (bidAmount > team.budget) {
+        setError('Bid amount exceeds team budget');
+        return;
+      }
+
       setCurrentBid(bidAmount);
       setHighestBidder(teamId);
       setTimer(15);
+      setError(null);
       
-      // Add to bid history
       setBidHistory(prev => [...prev, {
         teamId,
+        teamName: team.name,
         amount: bidAmount,
         timestamp: new Date().toISOString()
       }]);
     }
   };
 
+  // Existing handlePlayerSold with added stats update
   const handlePlayerSold = () => {
     if (highestBidder) {
-      // Save to localStorage
+      // Existing localStorage updates
       const soldPlayers = JSON.parse(localStorage.getItem('soldPlayers') || '[]');
       soldPlayers.push({
         playerId: currentPlayer.id,
@@ -103,35 +139,49 @@ const AuctionRoom = () => {
         return team;
       });
       localStorage.setItem('teams', JSON.stringify(updatedTeams));
+
+      // Update auction stats
+      const updatedStats = {
+        ...auctionStats,
+        soldPlayers: auctionStats.soldPlayers + 1,
+        totalAmount: auctionStats.totalAmount + currentBid
+      };
+      setAuctionStats(updatedStats);
+      saveToStorage('auctionStats', updatedStats);
     }
 
     setIsAuctionActive(false);
     setBidHistory([]);
+    setError(null);
   };
 
   return (
     <motion.div 
-      className={styles.auctionRoom}
-      variants={containerVariants}
-      initial="hidden"
-      animate="visible"
-    >
-      <AnimatePresence mode="wait">
-        {currentPlayer.id && (
-          <motion.div 
-            className={styles.currentPlayer}
-            key={currentPlayer.id}
-            variants={playerCardVariants}
-            initial="hidden"
-            animate="visible"
-            exit="exit"
-          >
-            <h2>{currentPlayer.name}</h2>
-            <p>Base Price: ₹{currentPlayer.basePrice.toLocaleString()}</p>
-          </motion.div>
-        )}
-      </AnimatePresence>
-      <TeamBalance 
+    className={styles.auctionRoom}
+    variants={containerVariants}
+    initial="hidden"
+    animate="visible"
+  >
+    {/* Existing AnimatePresence and player display */}
+    {error && (
+      <motion.div 
+        className={styles.error}
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0 }}
+      >
+        {error}
+      </motion.div>
+    )}
+
+    {/* Stats Display */}
+    <motion.div className={styles.auctionStats}>
+      <div>Players Sold: {auctionStats.soldPlayers}/{auctionStats.totalPlayers}</div>
+      <div>Total Amount: ₹{auctionStats.totalAmount.toLocaleString()}</div>
+    </motion.div>
+
+    {/* Existing TeamBalance component */}
+    <TeamBalance 
       onBid={handleBid} 
       highestBidder={highestBidder}
       currentBid={currentBid}

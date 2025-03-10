@@ -1,4 +1,4 @@
-
+import { motion } from 'framer-motion';
 import { useState } from 'react';
 import TeamSetup from './TeamSetup';
 import styles from './TournamentSetup.module.css';

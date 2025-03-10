@@ -95,3 +95,28 @@
       font-size: 1.2rem;
     }
   }
+  /* Add these new styles to your existing CSS */
+
+.error {
+    background: #ffebee;
+    color: #c62828;
+    padding: 1rem;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+    text-align: center;
+  }
+  
+  .auctionStats {
+    display: flex;
+    justify-content: space-around;
+    background: #e3f2fd;
+    padding: 1rem;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+  }
+  
+  .auctionStats div {
+    font-size: 1.1rem;
+    font-weight: 500;
+    color: #1976d2;
+  }
