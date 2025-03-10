@@ -2,6 +2,7 @@ import {  AnimatePresence } from 'framer-motion';
 import { useState, useEffect } from 'react';
 import BidHistory from './BidHistory';
 import TeamBalance from './TeamBalance';
+import styles from './AuctionRoom.module.css';
 
 const AuctionRoom = () => {
   const [currentPlayer, setCurrentPlayer] = useState({
@@ -110,7 +111,7 @@ const AuctionRoom = () => {
 
   return (
     <motion.div 
-      className="auction-room"
+      className={styles.auctionRoom}
       variants={containerVariants}
       initial="hidden"
       animate="visible"
@@ -118,7 +119,7 @@ const AuctionRoom = () => {
       <AnimatePresence mode="wait">
         {currentPlayer.id && (
           <motion.div 
-            className="current-player"
+            className={styles.currentPlayer}
             key={currentPlayer.id}
             variants={playerCardVariants}
             initial="hidden"
@@ -133,13 +134,14 @@ const AuctionRoom = () => {
 
       <AnimatePresence>
         <motion.div 
-          className="bid-section"
+          className={styles.bidSection}
           animate={{ 
             scale: timer <= 10 ? [1, 1.1, 1] : 1,
             transition: { duration: 0.5, repeat: timer <= 10 ? Infinity : 0 }
           }}
         >
           <motion.h3
+            className={styles.bidAmount}
             animate={{ 
               color: highestBidder ? "#4CAF50" : "#333"
             }}
@@ -147,6 +149,7 @@ const AuctionRoom = () => {
             Current Bid: ₹{currentBid.toLocaleString()}
           </motion.h3>
           <motion.div
+            className={styles.timer}
             animate={{ 
               color: timer <= 5 ? "#ff0000" : "#333",
               scale: timer <= 5 ? [1, 1.2, 1] : 1
@@ -157,6 +160,7 @@ const AuctionRoom = () => {
           </motion.div>
           {highestBidder && (
             <motion.p
+              className={styles.highestBidder}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
@@ -168,10 +172,11 @@ const AuctionRoom = () => {
       </AnimatePresence>
 
       <motion.div 
-        className="auction-controls"
+        className={styles.auctionControls}
         variants={containerVariants}
       >
         <motion.button 
+          className={styles.nextPlayerButton}
           onClick={handleNextPlayer}
           disabled={isAuctionActive}
           whileHover={{ scale: 1.05 }}
@@ -183,7 +188,7 @@ const AuctionRoom = () => {
         <TeamBalance onBid={handleBid} highestBidder={highestBidder} />
       </motion.div>
     </motion.div>
-  );
+);
 };
 
 export default AuctionRoom;

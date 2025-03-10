@@ -1,0 +1,89 @@
+.teamSetup {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 2rem;
+  }
+  
+  .title {
+    text-align: center;
+    color: #2196F3;
+    margin-bottom: 2rem;
+  }
+  
+  .error {
+    background: #FFEBEE;
+    color: #F44336;
+    padding: 1rem;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+  }
+  
+  .teamCard {
+    background: white;
+    padding: 2rem;
+    border-radius: 12px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    margin-bottom: 2rem;
+  }
+  
+  .inputGroup {
+    margin-bottom: 1.5rem;
+  }
+  
+  .inputGroup label {
+    display: block;
+    margin-bottom: 0.5rem;
+    color: #424242;
+    font-weight: 500;
+  }
+  
+  .inputGroup input {
+    width: 100%;
+    padding: 0.75rem;
+    border: 1px solid #E0E0E0;
+    border-radius: 4px;
+    font-size: 1rem;
+  }
+  
+  .inputGroup input:focus {
+    outline: none;
+    border-color: #2196F3;
+    box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.1);
+  }
+  
+  .logoPreview {
+    max-width: 100px;
+    max-height: 100px;
+    margin-top: 1rem;
+    border-radius: 8px;
+    object-fit: contain;
+  }
+  
+  .submitButton {
+    display: block;
+    width: 100%;
+    padding: 1rem;
+    background: #2196F3;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 1.1rem;
+    font-weight: 500;
+    cursor: pointer;
+    margin-top: 2rem;
+  }
+  
+  .submitButton:disabled {
+    background: #BDBDBD;
+    cursor: not-allowed;
+  }
+  
+  @media (max-width: 600px) {
+    .teamSetup {
+      padding: 1rem;
+    }
+  
+    .teamCard {
+      padding: 1rem;
+    }
+  }
