@@ -131,6 +131,11 @@ const AuctionRoom = () => {
           </motion.div>
         )}
       </AnimatePresence>
+      <TeamBalance 
+      onBid={handleBid} 
+      highestBidder={highestBidder}
+      currentBid={currentBid}
+    />
 
       <AnimatePresence>
         <motion.div 
