@@ -1,207 +1,187 @@
-import {  motion,AnimatePresence } from 'framer-motion';
 import { useState, useEffect } from 'react';
-import PropTypes from 'prop-types';
-import styles from './TeamSetup.module.css';
+import { useNavigate } from 'react-router-dom';
+import { motion } from 'framer-motion';
+import { useLocalStorage } from '../../hooks/useLocalStorage';
+import './TeamSetup.module.css';
 
-
-const TeamSetup = ({ numberOfTeams, onTeamsSubmit }) => {
-  const [teams, setTeams] = useState([]);
-  const [error, setError] = useState('');
-
+const TeamSetup = () => {
+  const navigate = useNavigate();
+  const [tournamentData, setTournamentData] = useLocalStorage('tournamentData', null);
+  const [editingTeamIndex, setEditingTeamIndex] = useState(null);
+  const [editedTeam, setEditedTeam] = useState(null);
+  
+  // Check if tournament data exists
   useEffect(() => {
-    // Initialize teams array based on numberOfTeams
-    const initialTeams = Array(numberOfTeams).fill().map((_, index) => ({
-      id: `team-${index + 1}`,
-      name: '',
-      shortName: '',
-      budget: 10000000, // 10 Crore default budget
-      captain: '',
-      logo: null
-    }));
-    setTeams(initialTeams);
-  }, [numberOfTeams]);
-
-  const handleInputChange = (index, field, value) => {
-    setTeams(prevTeams => {
-      const newTeams = [...prevTeams];
-      newTeams[index] = {
-        ...newTeams[index],
-        [field]: value
-      };
-      return newTeams;
-    });
-    setError('');
-  };
-
-  const handleLogoUpload = (index, file) => {
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        handleInputChange(index, 'logo', e.target.result);
-      };
-      reader.readAsDataURL(file);
+    if (!tournamentData) {
+      navigate('/setup/tournament');
     }
+  }, [tournamentData, navigate]);
+  
+  if (!tournamentData) {
+    return <div>Loading...</div>;
+  }
+  
+  // Start editing a team
+  const handleEditTeam = (index) => {
+    setEditingTeamIndex(index);
+    setEditedTeam({ ...tournamentData.teams[index] });
   };
-
-  const validateTeams = () => {
-    for (const team of teams) {
-      if (!team.name || !team.shortName || !team.captain) {
-        setError('Please fill in all required fields for all teams');
-        return false;
-      }
-      if (team.name.length < 3) {
-        setError('Team names must be at least 3 characters long');
-        return false;
-      }
-      if (team.shortName.length !== 3) {
-        setError('Team short names must be exactly 3 characters');
-        return false;
-      }
-    }
+  
+  // Save edited team
+  const handleSaveTeam = () => {
+    if (editingTeamIndex === null || !editedTeam) return;
     
-    const teamNames = teams.map(team => team.name.toLowerCase());
-    if (new Set(teamNames).size !== teamNames.length) {
-      setError('Team names must be unique');
-      return false;
-    }
-
-    return true;
+    const updatedTeams = [...tournamentData.teams];
+    updatedTeams[editingTeamIndex] = editedTeam;
+    
+    setTournamentData({
+      ...tournamentData,
+      teams: updatedTeams
+    });
+    
+    setEditingTeamIndex(null);
+    setEditedTeam(null);
   };
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (validateTeams()) {
-      onTeamsSubmit(teams);
-    }
+  
+  // Cancel editing
+  const handleCancelEdit = () => {
+    setEditingTeamIndex(null);
+    setEditedTeam(null);
   };
-
-  const containerVariants = {
-    hidden: { opacity: 0 },
-    visible: {
-      opacity: 1,
-      transition: {
-        staggerChildren: 0.1
-      }
-    }
+  
+  // Handle team fields update
+  const handleTeamFieldChange = (field, value) => {
+    if (!editedTeam) return;
+    
+    setEditedTeam({
+      ...editedTeam,
+      [field]: value
+    });
   };
-
-  const teamVariants = {
-    hidden: { x: -20, opacity: 0 },
-    visible: { x: 0, opacity: 1 }
+  
+  // Continue to next step
+  const handleContinue = () => {
+    navigate('/auction');
   };
-
+  
   return (
-    <motion.div
-      className={styles.teamSetup}
-      variants={containerVariants}
-      initial="hidden"
-      animate="visible"
-    >
-      <h2 className={styles.title}>Team Setup</h2>
+    <div className="team-setup-container">
+      <h2>Team Setup</h2>
       
-      {error && (
-        <motion.div 
-          className={styles.error}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-        >
-          {error}
-        </motion.div>
-      )}
-
-      <form onSubmit={handleSubmit}>
-        <AnimatePresence>
-          {teams.map((team, index) => (
-            <motion.div
-              key={team.id}
-              className={styles.teamCard}
-              variants={teamVariants}
-            >
-              <h3>Team {index + 1}</h3>
-              
-              <div className={styles.inputGroup}>
-                <label htmlFor={`name-${index}`}>Team Name</label>
-                <input
-                  id={`name-${index}`}
-                  type="text"
-                  value={team.name}
-                  onChange={(e) => handleInputChange(index, 'name', e.target.value)}
-                  placeholder="Enter team name"
-                />
-              </div>
-
-              <div className={styles.inputGroup}>
-                <label htmlFor={`shortName-${index}`}>Short Name (3 chars)</label>
-                <input
-                  id={`shortName-${index}`}
-                  type="text"
-                  value={team.shortName}
-                  onChange={(e) => handleInputChange(index, 'shortName', e.target.value.toUpperCase().slice(0, 3))}
-                  placeholder="XXX"
-                  maxLength={3}
-                />
-              </div>
-
-              <div className={styles.inputGroup}>
-                <label htmlFor={`captain-${index}`}>Captain Name</label>
-                <input
-                  id={`captain-${index}`}
-                  type="text"
-                  value={team.captain}
-                  onChange={(e) => handleInputChange(index, 'captain', e.target.value)}
-                  placeholder="Enter captain name"
-                />
-              </div>
-
-              <div className={styles.inputGroup}>
-                <label htmlFor={`budget-${index}`}>Budget (₹)</label>
-                <input
-                  id={`budget-${index}`}
-                  type="number"
-                  value={team.budget}
-                  onChange={(e) => handleInputChange(index, 'budget', Number(e.target.value))}
-                  min="1000000"
-                  max="100000000"
-                />
-              </div>
-
-              <div className={styles.inputGroup}>
-                <label htmlFor={`logo-${index}`}>Team Logo</label>
-                <input
-                  id={`logo-${index}`}
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => handleLogoUpload(index, e.target.files[0])}
-                />
-                {team.logo && (
-                  <img
-                    src={team.logo}
-                    alt={`${team.name} logo`}
-                    className={styles.logoPreview}
+      <div className="teams-grid">
+        {tournamentData.teams.map((team, index) => (
+          <motion.div 
+            key={team.id}
+            className="team-card"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: index * 0.1 }}
+          >
+            {editingTeamIndex === index ? (
+              <div className="team-edit-form">
+                <div className="form-group">
+                  <label htmlFor="teamName">Team Name</label>
+                  <input
+                    type="text"
+                    id="teamName"
+                    value={editedTeam.name}
+                    onChange={(e) => handleTeamFieldChange('name', e.target.value)}
+                    placeholder="Enter team name"
                   />
-                )}
+                </div>
+                
+                <div className="form-group">
+                  <label htmlFor="teamBudget">Budget (₹)</label>
+                  <input
+                    type="number"
+                    id="teamBudget"
+                    value={editedTeam.budget}
+                    onChange={(e) => handleTeamFieldChange('budget', parseInt(e.target.value))}
+                    min="1000000"
+                    max="100000000"
+                    step="1000000"
+                  />
+                </div>
+                
+                <div className="form-group">
+                  <label htmlFor="teamIcon">Icon</label>
+                  <select
+                    id="teamIcon"
+                    value={editedTeam.icon}
+                    onChange={(e) => handleTeamFieldChange('icon', e.target.value)}
+                  >
+                    {['🏏', '🏆', '🎯', '🔥', '⚡', '🌟', '🚀', '🦁', '🐯', '🐘'].map(icon => (
+                      <option key={icon} value={icon}>{icon}</option>
+                    ))}
+                  </select>
+                </div>
+                
+                <div className="edit-actions">
+                  <motion.button
+                    className="save-button"
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={handleSaveTeam}
+                  >
+                    Save
+                  </motion.button>
+                  
+                  <motion.button
+                    className="cancel-button"
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={handleCancelEdit}
+                  >
+                    Cancel
+                  </motion.button>
+                </div>
               </div>
-            </motion.div>
-          ))}
-        </AnimatePresence>
-
+            ) : (
+              <>
+                <div className="team-header">
+                  <div className="team-icon">{team.icon}</div>
+                  <h3 className="team-name">{team.name}</h3>
+                </div>
+                
+                <div className="team-details">
+                  <p className="team-budget">Budget: ₹{(team.budget / 1000000).toFixed(1)} Cr</p>
+                </div>
+                
+                <motion.button
+                  className="edit-button"
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => handleEditTeam(index)}
+                >
+                  Edit
+                </motion.button>
+              </>
+            )}
+          </motion.div>
+        ))}
+      </div>
+      
+      <div className="setup-actions">
         <motion.button
-          type="submit"
-          className={styles.submitButton}
+          className="secondary-button"
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
+          onClick={() => navigate('/setup/tournament')}
         >
-          Continue to Player Setup
+          Back
         </motion.button>
-      </form>
-    </motion.div>
+        
+        <motion.button
+          className="primary-button"
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          onClick={handleContinue}
+        >
+          Continue to Auction
+        </motion.button>
+      </div>
+    </div>
   );
-};
-
-TeamSetup.propTypes = {
-  numberOfTeams: PropTypes.number.isRequired,
-  onTeamsSubmit: PropTypes.func.isRequired
 };
 
 export default TeamSetup;

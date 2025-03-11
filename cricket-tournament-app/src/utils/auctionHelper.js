@@ -1,133 +1,95 @@
-import { getFromStorage, saveToStorage } from '../store/localStorage';
+// Utility functions for auction system
 
-export const calculateMinimumBid = (currentBid, incrementPercentage = 5) => {
-  return Math.ceil(currentBid * (1 + incrementPercentage / 100));
+// Generate a random room code (6 characters alphanumeric)
+export const generateRoomCode = () => {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Removed confusing characters like 0, O, 1, I
+  let result = '';
+  for (let i = 0; i < 6; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
 };
 
-export const validateBid = (bid, team, currentBid) => {
-  const minBid = calculateMinimumBid(currentBid);
-  
-  if (!bid || !team) {
-    return {
-      isValid: false,
-      message: 'Invalid bid or team'
-    };
-  }
+// Calculate base price for a player
+export const calculateBasePrice = (teamBudget) => {
+  // Base price is 5% of team budget
+  return Math.round(teamBudget * 0.05);
+};
 
-  if (bid < minBid) {
-    return {
-      isValid: false,
-      message: `Bid must be at least ₹${minBid.toLocaleString()}`
-    };
-  }
+// Calculate bid increment (4% of current bid)
+export const calculateBidIncrement = (currentBid) => {
+  return Math.ceil(currentBid * 0.04);
+};
 
-  if (bid > team.budget) {
-    return {
-      isValid: false,
-      message: 'Bid exceeds team budget'
-    };
-  }
-
-  return {
-    isValid: true,
-    message: ''
+// Get player role icon
+export const getPlayerRoleIcon = (role) => {
+  const roleIcons = {
+    'Batsman': '🏏',
+    'Bowler': '🎯',
+    'All-Rounder': '⭐',
+    'Wicket-Keeper': '🧤',
+    'Captain': '👑',
   };
+  
+  return roleIcons[role] || '🏏';
 };
 
-export const updateTeamAfterBid = (teamId, soldPrice) => {
-  const teams = getFromStorage('teams', []);
-  const updatedTeams = teams.map(team => {
-    if (team.id === teamId) {
-      return {
-        ...team,
-        budget: team.budget - soldPrice,
-        players: [...team.players]
-      };
+// Format currency for display
+export const formatCurrency = (amount) => {
+  return new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    maximumFractionDigits: 0,
+    notation: amount > 10000000 ? 'compact' : 'standard',
+  }).format(amount);
+};
+
+// Generate player statistics for display
+export const generatePlayerStats = (player) => {
+  // For demonstration, generate random stats
+  const stats = {
+    batting: {
+      average: (20 + Math.random() * 50).toFixed(2),
+      strikeRate: (100 + Math.random() * 50).toFixed(2),
+      highestScore: Math.floor(50 + Math.random() * 150),
+    },
+    bowling: {
+      economy: (5 + Math.random() * 5).toFixed(2),
+      average: (20 + Math.random() * 20).toFixed(2),
+      bestFigures: `${Math.floor(1 + Math.random() * 6)}/${Math.floor(10 + Math.random() * 50)}`,
     }
-    return team;
-  });
-  
-  return saveToStorage('teams', updatedTeams);
-};
-
-export const recordAuctionTransaction = (player, buyingTeam, soldPrice) => {
-  const transactions = getFromStorage('auctionTransactions', []);
-  const newTransaction = {
-    id: `transaction-${Date.now()}`,
-    playerId: player.id,
-    playerName: player.name,
-    teamId: buyingTeam.id,
-    teamName: buyingTeam.name,
-    price: soldPrice,
-    timestamp: new Date().toISOString()
   };
   
-  transactions.push(newTransaction);
-  return saveToStorage('auctionTransactions', transactions);
+  return stats;
 };
 
-export const getTeamBidHistory = (teamId) => {
-  const transactions = getFromStorage('auctionTransactions', []);
-  return transactions.filter(t => t.teamId === teamId);
+// Check if a team has completed their squad
+export const hasCompletedSquad = (team) => {
+  return team.slots.remaining === 0;
 };
 
-export const getRemainingPurse = (teamId) => {
-  const teams = getFromStorage('teams', []);
-  const team = teams.find(t => t.id === teamId);
-  return team ? team.budget : 0;
-};
-
-export const getPlayersBoughtByTeam = (teamId) => {
-  const transactions = getFromStorage('auctionTransactions', []);
-  return transactions
-    .filter(t => t.teamId === teamId)
-    .map(t => ({
-      playerId: t.playerId,
-      name: t.playerName,
-      price: t.price
-    }));
-};
-
-export const validateAuctionStatus = (teamId) => {
-  const team = getFromStorage('teams', []).find(t => t.id === teamId);
-  if (!team) return { canBid: false, message: 'Team not found' };
-
-  const playersBought = getPlayersBoughtByTeam(teamId).length;
-  const maxPlayers = team.maxPlayers || 25;
-
-  if (playersBought >= maxPlayers) {
-    return {
-      canBid: false,
-      message: 'Maximum squad size reached'
-    };
-  }
-
-  if (team.budget < 100000) { // Minimum bid amount
-    return {
-      canBid: false,
-      message: 'Insufficient budget'
-    };
-  }
-
-  return {
-    canBid: true,
-    message: ''
+// Generate auction summary for display or export
+export const generateAuctionSummary = (auctionData) => {
+  if (!auctionData) return null;
+  
+  const summary = {
+    tournamentName: auctionData.tournamentName,
+    teams: auctionData.teams.map(team => ({
+      name: team.name,
+      budget: {
+        initial: team.budget,
+        remaining: team.remainingBudget,
+        spent: team.budget - team.remainingBudget
+      },
+      players: team.players.map(player => ({
+        name: player.name,
+        role: player.role,
+        purchasePrice: player.purchasePrice
+      }))
+    })),
+    soldPlayers: auctionData.soldPlayers.length,
+    timestamp: Date.now()
   };
-};
-
-export const getAuctionSummary = () => {
-  const transactions = getFromStorage('auctionTransactions', []);
-  const teams = getFromStorage('teams', []);
-
-  return teams.map(team => {
-    const teamTransactions = transactions.filter(t => t.teamId === team.id);
-    return {
-      teamId: team.id,
-      teamName: team.name,
-      playersBought: teamTransactions.length,
-      totalSpent: teamTransactions.reduce((sum, t) => sum + t.price, 0),
-      remainingBudget: team.budget,
-      transactions: teamTransactions
-    };
-  });
+  
+  return summary;
 };
