@@ -1,42 +1,145 @@
-.App {
-  min-height: 100vh;
-  background: #f5f5f5;
+/* Global styles for the Cricket Tournament App */
+
+/* Common Button Styles */
+.primary-button {
+  background-color: #4c6ef5;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 12px 24px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s ease, transform 0.2s ease;
 }
 
-.not-found {
-  text-align: center;
-  padding: 2rem;
-  margin: 2rem auto;
-  max-width: 600px;
-  background: white;
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+.primary-button:hover {
+  background-color: #4263eb;
+  transform: translateY(-2px);
 }
 
-.not-found h2 {
-  color: #f44336;
-  margin-bottom: 1rem;
+.primary-button:active {
+  transform: translateY(0);
 }
 
-.not-found p {
-  color: #757575;
+.primary-button:disabled {
+  background-color: #a0aec0;
+  cursor: not-allowed;
+  transform: none;
 }
 
-/* Dark mode support */
-@media (prefers-color-scheme: dark) {
-  .App {
-    background: #121212;
+.secondary-button {
+  background-color: white;
+  color: #4a5568;
+  border: 2px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 12px 24px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s ease, transform 0.2s ease;
+}
+
+.secondary-button:hover {
+  background-color: #f7fafc;
+  transform: translateY(-2px);
+}
+
+.secondary-button:active {
+  transform: translateY(0);
+}
+
+/* Form Elements */
+.form-group {
+  margin-bottom: 20px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 5px;
+  font-weight: 600;
+  color: #4a5568;
+}
+
+.form-group input,
+.form-group select,
+.form-group textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 2px solid #e2e8f0;
+  border-radius: 6px;
+  font-size: 1rem;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus {
+  border-color: #4c6ef5;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(76, 110, 245, 0.2);
+}
+
+/* Card Styles */
+.card {
+  background-color: white;
+  border-radius: 10px;
+  padding: 20px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* Loading Animation */
+.loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  width: 100%;
+  background-color: rgba(247, 250, 252, 0.8);
+  font-size: 1.5rem;
+  color: #4c6ef5;
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 1000;
+}
+
+.loading::after {
+  content: "";
+  width: 40px;
+  height: 40px;
+  border: 4px solid #e2e8f0;
+  border-top: 4px solid #4c6ef5;
+  border-radius: 50%;
+  margin-left: 10px;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Responsive Utilities */
+@media (max-width: 768px) {
+  .hide-on-mobile {
+    display: none;
   }
-
-  .not-found {
-    background: #1e1e1e;
+  
+  .primary-button,
+  .secondary-button {
+    width: 100%;
   }
+}
 
-  .not-found h2 {
-    color: #ff5252;
-  }
-
-  .not-found p {
-    color: #9e9e9e;
+@media (min-width: 769px) {
+  .hide-on-desktop {
+    display: none;
   }
 }
