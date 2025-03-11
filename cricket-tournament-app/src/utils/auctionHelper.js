@@ -45,7 +45,7 @@ export const formatCurrency = (amount) => {
 };
 
 // Generate player statistics for display
-export const generatePlayerStats = (player) => {
+export const generatePlayerStats = () => {
   // For demonstration, generate random stats
   const stats = {
     batting: {

@@ -28,7 +28,7 @@ const AuctionRoom = () => {
     initializeAuction,
     startAuction,
     placeBid,
-    completePlayerAuction,
+    
     exportAuctionData,
   } = useAuction();
 
@@ -173,20 +173,23 @@ const AuctionRoom = () => {
         </div>
         
         <div className="team-list">
-          <h3>Teams</h3>
-          <div className="teams-overview">
-            {auctionData.teams.map(team => (
-              <div key={team.id} className="team-overview-card">
-                <div className="team-badge">
-                  <span className="team-icon">{team.icon}</span>
-                  <h4>{team.name}</h4>
-                </div>
-                <p>Budget: {formatCurrency(team.budget)}</p>
-                <p>Slots: {team.slots.total}</p>
-              </div>
-            ))}
+  <h3>Teams</h3>
+  <div className="teams-overview">
+    {auctionData?.teams ? 
+      auctionData.teams.map(team => (
+        <div key={team.id} className="team-overview-card">
+          <div className="team-badge">
+            <span className="team-icon">{team.icon}</span>
+            <h4>{team.name}</h4>
           </div>
+          <p>Budget: {formatCurrency(team.budget)}</p>
+          <p>Slots: {team.slots.total}</p>
         </div>
+      )) 
+      : null
+    }
+  </div>
+</div>
       </div>
     );
   }

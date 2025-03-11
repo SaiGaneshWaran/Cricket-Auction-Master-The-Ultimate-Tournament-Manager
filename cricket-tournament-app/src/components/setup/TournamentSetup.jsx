@@ -138,15 +138,15 @@ const TournamentSetup = ({ setTournamentData }) => {
           
           <div className="form-group">
             <label htmlFor="numTeams">Number of Teams</label>
-            <input
-              type="number"
-              id="numTeams"
-              value={numTeams}
-              onChange={(e) => setNumTeams(parseInt(e.target.value))}
-              min="2"
-              max="10"
-              required
-            />
+            // For numeric inputs, ensure they have valid values:
+<input
+  type="number"
+  value={isNaN(numTeams) ? '' : numTeams}
+  onChange={(e) => setNumTeams(parseInt(e.target.value) || 0)}
+  min="2"
+  max="10"
+  required
+/>
           </div>
           
           <div className="form-group">

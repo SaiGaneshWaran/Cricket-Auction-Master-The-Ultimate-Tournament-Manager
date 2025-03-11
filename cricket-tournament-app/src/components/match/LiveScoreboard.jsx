@@ -8,7 +8,7 @@ const LiveScoreboard = () => {
   const [commentaryExpanded, setCommentaryExpanded] = useState(true);
   
   const {
-    matchesData,
+    
     currentMatch,
     innings,
     runs,

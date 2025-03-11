@@ -17,8 +17,7 @@ const MatchSimulator = () => {
   
   const {
     matchesData,
-    currentMatch,
-    matchStatus,
+    
     createMatch,
     startMatch
   } = useMatchSimulation();
