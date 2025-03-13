@@ -1,89 +1,578 @@
-.teamSetup {
-    max-width: 800px;
-    margin: 0 auto;
-    padding: 2rem;
-  }
-  
-  .title {
-    text-align: center;
-    color: #2196F3;
-    margin-bottom: 2rem;
-  }
-  
-  .error {
-    background: #FFEBEE;
-    color: #F44336;
+/* Main Container & Background */
+.teamSetupContainer {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem;
+  position: relative;
+}
+
+.pageBackground {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(135deg, #f8fafc, #f1f5f9, #f8fafc);
+  z-index: -1;
+}
+
+/* Header Styles */
+.setupHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+}
+
+.setupHeader h2 {
+  color: #1e293b;
+  font-size: 1.8rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.iconButton {
+  background: transparent;
+  border: none;
+  color: #64748b;
+  font-size: 1.4rem;
+  cursor: pointer;
+  padding: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: all 0.2s;
+}
+
+.iconButton:hover {
+  background-color: #f1f5f9;
+  color: #3b82f6;
+}
+
+/* Progress Bar */
+.progressContainer {
+  margin-bottom: 2rem;
+}
+
+.progressBarWrapper {
+  width: 100%;
+  height: 8px;
+  background-color: #e2e8f0;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.progressBar {
+  height: 100%;
+  background: linear-gradient(90deg, #4c6ef5, #3b82f6);
+  border-radius: 4px;
+}
+
+.progressText {
+  color: #64748b;
+  font-size: 0.9rem;
+  margin-top: 0.5rem;
+  text-align: right;
+}
+
+/* Help Panel */
+.helpPanel {
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-left: 4px solid #4c6ef5;
+  border-radius: 8px;
+  padding: 1rem 1.5rem;
+  margin-bottom: 2rem;
+  overflow: hidden;
+}
+
+.helpPanel h4 {
+  color: #1e293b;
+  margin-top: 0;
+  margin-bottom: 0.75rem;
+}
+
+.helpPanel ul {
+  color: #64748b;
+  padding-left: 1.5rem;
+  margin: 0;
+}
+
+.helpPanel li {
+  margin-bottom: 0.5rem;
+}
+
+.helpPanel li:last-child {
+  margin-bottom: 0;
+}
+
+/* Teams Grid */
+.teamsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+/* Team Card */
+.teamCard {
+  background-color: white;
+  border-radius: 10px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  overflow: hidden;
+  border: 2px solid transparent;
+  transition: all 0.3s;
+  position: relative;
+}
+
+.teamCard.dragging {
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+  transform: rotate(2deg);
+}
+
+.dragHandle {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  z-index: 2;
+}
+
+.dragIcon {
+  width: 16px;
+  height: 10px;
+  background-image: radial-gradient(circle, #64748b 1.5px, transparent 1.5px);
+  background-size: 4px 4px;
+  background-repeat: space;
+}
+
+.teamHeader {
+  display: flex;
+  align-items: center;
+  padding: 1.25rem;
+  color: white;
+}
+
+.teamIcon {
+  font-size: 1.5rem;
+  margin-right: 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  width: 40px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+}
+
+.teamName {
+  margin: 0;
+  font-size: 1.3rem;
+  font-weight: 600;
+  flex: 1;
+}
+
+.teamDetails {
+  padding: 1.25rem;
+}
+
+.budgetDisplay {
+  margin-bottom: 0.75rem;
+  font-size: 1.1rem;
+}
+
+.budgetLabel {
+  font-weight: 500;
+  color: #64748b;
+}
+
+.budgetValue {
+  margin-left: 0.5rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.teamDescription {
+  color: #64748b;
+  font-style: italic;
+  margin: 0.5rem 0;
+  font-size: 0.95rem;
+}
+
+.teamStats {
+  display: flex;
+  margin-top: 1rem;
+}
+
+.statItem {
+  display: flex;
+  align-items: center;
+  margin-right: 1rem;
+}
+
+.statLabel {
+  color: #64748b;
+  font-size: 0.9rem;
+}
+
+.statValue {
+  margin-left: 0.25rem;
+  color: #0f172a;
+  font-weight: 500;
+}
+
+.cardActions {
+  display: flex;
+  padding: 1rem 1.25rem;
+  border-top: 1px solid #f1f5f9;
+}
+
+.editButton, .deleteButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.editButton {
+  background-color: #f1f5f9;
+  color: #1e293b;
+  margin-right: 0.5rem;
+  flex: 1;
+}
+
+.editButton:hover {
+  background-color: #e2e8f0;
+}
+
+.deleteButton {
+  background-color: transparent;
+  color: #ef4444;
+  padding: 0.5rem;
+  border-radius: 50%;
+}
+
+.deleteButton:hover {
+  background-color: #FEE2E2;
+}
+
+/* Team Edit Form */
+.teamEditForm {
+  padding: 1.25rem;
+}
+
+.formRow {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.formGroup {
+  flex: 1;
+  margin-bottom: 1rem;
+}
+
+.formGroup label {
+  display: block;
+  margin-bottom: 0.5rem;
+  color: #64748b;
+  font-weight: 500;
+  font-size: 0.9rem;
+}
+
+.formGroup input {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  font-size: 1rem;
+  transition: all 0.2s;
+}
+
+.formGroup input:focus {
+  outline: none;
+  border-color: #4c6ef5;
+  box-shadow: 0 0 0 2px rgba(76, 110, 245, 0.1);
+}
+
+.inputError {
+  border-color: #ef4444 !important;
+  background-color: #FEF2F2;
+}
+
+.errorText {
+  color: #ef4444;
+  font-size: 0.8rem;
+  margin-top: 0.25rem;
+  display: block;
+}
+
+/* Icon Selector */
+.iconSelector {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  max-height: 100px;
+  overflow-y: auto;
+  padding: 0.5rem;
+  background-color: #f8fafc;
+  border-radius: 6px;
+}
+
+.iconOption {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+  background-color: white;
+  border: 1px solid transparent;
+}
+
+.iconOption:hover {
+  background-color: #e2e8f0;
+}
+
+.selectedIcon {
+  border-color: #4c6ef5;
+  background-color: #edf2ff;
+}
+
+/* Color Selector */
+.colorSelector {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.colorOption {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 2px solid transparent;
+}
+
+.colorOption:hover {
+  transform: scale(1.1);
+}
+
+.selectedColor {
+  border-color: white;
+  box-shadow: 0 0 0 2px #4c6ef5;
+}
+
+/* Edit Actions */
+.editActions {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 1.5rem;
+}
+
+.saveButton, .cancelButton {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.saveButton {
+  background-color: #4c6ef5;
+  color: white;
+}
+
+.saveButton:hover {
+  background-color: #4263eb;
+}
+
+.cancelButton {
+  background-color: #f1f5f9;
+  color: #64748b;
+}
+
+.cancelButton:hover {
+  background-color: #e2e8f0;
+}
+
+/* Add Team Card */
+.addTeamCard {
+  background-color: #f8fafc;
+  border: 2px dashed #cbd5e1;
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 2rem;
+  transition: all 0.3s;
+  height: 100%;
+  min-height: 200px;
+}
+
+.addTeamCard:hover {
+  border-color: #4c6ef5;
+  background-color: #f1f5f9;
+}
+
+.addTeamIcon {
+  font-size: 2.5rem;
+  color: #94a3b8;
+  margin-bottom: 0.5rem;
+}
+
+.addTeamCard p {
+  color: #64748b;
+  font-weight: 500;
+  margin: 0;
+}
+
+/* Setup Actions */
+.setupActions {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 2rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e2e8f0;
+}
+
+.primaryButton, .secondaryButton {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.primaryButton {
+  background-color: #4c6ef5;
+  color: white;
+}
+
+.primaryButton:hover {
+  background-color: #4263eb;
+  box-shadow: 0 4px 12px rgba(76, 110, 245, 0.2);
+}
+
+.secondaryButton {
+  background-color: #f1f5f9;
+  color: #64748b;
+}
+
+.secondaryButton:hover {
+  background-color: #e2e8f0;
+}
+
+/* Loading State */
+.loadingContainer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 70vh;
+}
+
+.loadingSpinner {
+  border: 4px solid #f3f3f3;
+  border-top: 4px solid #4c6ef5;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  animation: spin 1s linear infinite;
+  margin-bottom: 1rem;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Responsive Adjustments */
+@media (max-width: 768px) {
+  .teamSetupContainer {
     padding: 1rem;
-    border-radius: 8px;
-    margin-bottom: 1rem;
   }
   
-  .teamCard {
-    background: white;
-    padding: 2rem;
-    border-radius: 12px;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-    margin-bottom: 2rem;
+  .teamsGrid {
+    grid-template-columns: 1fr;
   }
   
-  .inputGroup {
-    margin-bottom: 1.5rem;
+  .formRow {
+    flex-direction: column;
+    gap: 0;
   }
   
-  .inputGroup label {
-    display: block;
-    margin-bottom: 0.5rem;
-    color: #424242;
-    font-weight: 500;
+  .setupActions {
+    flex-direction: column;
+    gap: 1rem;
   }
   
-  .inputGroup input {
-    width: 100%;
-    padding: 0.75rem;
-    border: 1px solid #E0E0E0;
-    border-radius: 4px;
-    font-size: 1rem;
+  .secondaryButton {
+    order: 2;
   }
   
-  .inputGroup input:focus {
-    outline: none;
-    border-color: #2196F3;
-    box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.1);
+  .primaryButton {
+    order: 1;
   }
-  
-  .logoPreview {
-    max-width: 100px;
-    max-height: 100px;
-    margin-top: 1rem;
-    border-radius: 8px;
-    object-fit: contain;
-  }
-  
-  .submitButton {
-    display: block;
-    width: 100%;
-    padding: 1rem;
-    background: #2196F3;
-    color: white;
-    border: none;
-    border-radius: 8px;
-    font-size: 1.1rem;
-    font-weight: 500;
-    cursor: pointer;
-    margin-top: 2rem;
-  }
-  
-  .submitButton:disabled {
-    background: #BDBDBD;
-    cursor: not-allowed;
-  }
-  
-  @media (max-width: 600px) {
-    .teamSetup {
-      padding: 1rem;
-    }
-  
-    .teamCard {
-      padding: 1rem;
-    }
-  }
+}
+/* Add these to TeamSetup.module.css */
+
+.reorderControls {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.arrowButton {
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: rgba(0, 0, 0, 0.5);
+  transition: all 0.2s;
+}
+
+.arrowButton:hover {
+  background: rgba(255, 255, 255, 0.4);
+  color: rgba(0, 0, 0, 0.8);
+}
+
+.arrowButton:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}

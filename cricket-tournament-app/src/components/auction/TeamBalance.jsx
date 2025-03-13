@@ -1,166 +1,346 @@
-import { useState } from 'react';
-import { motion } from 'framer-motion';
-import PropTypes from 'prop-types';
-import { formatCurrency } from '../../utils/auctionHelper';
-import './TeamBalance.module.css';
+import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { FiDollarSign, FiUsers, FiPieChart, FiActivity, FiClock, FiChevronDown, FiChevronUp } from 'react-icons/fi';
+import { GiCricketBat, GiBaseballGlove } from 'react-icons/gi';
+import { IoBaseballOutline } from 'react-icons/io5';
+import { BsShieldFill } from 'react-icons/bs';
+import styles from './TeamBalance.module.css';
 
-const TeamBalance = ({ teams = [], currentTeamId = null }) => {
-  const [showAllTeams, setShowAllTeams] = useState(false);
+const TeamBalance = ({ team, currentBid= [] }) => {
+  const [showDetails, setShowDetails] = useState(false);
+  const [activeTab, setActiveTab] = useState('players');
   
-  // Find current team
-  const currentTeam = currentTeamId 
-    ? teams.find(team => team.id === currentTeamId) 
-    : null;
+  // Return null if team data is not available
+  if (!team) return null;
   
-  // Calculate budget percentage for progress bar
-  const getBudgetPercentage = (team) => {
-    if (!team || !team.budget) return 0;
-    return ((team.budget - team.remainingBudget) / team.budget) * 100;
-  };
+  // Calculate budget metrics
+  const budgetPercentage = (team.budget / team.initialBudget) * 100;
+  const budgetSpent = team.initialBudget - team.budget;
+  const budgetSpentPercentage = 100 - budgetPercentage;
   
-  // Calculate slots percentage for progress bar
-  const getSlotsPercentage = (team) => {
-    if (!team || !team.slots) return 0;
-    return ((team.slots.total - team.slots.remaining) / team.slots.total) * 100;
+  // Calculate if team can afford the next bid
+  const nextBidAmount = Math.floor(currentBid * 1.05); // 5% increment
+  const canAffordNextBid = team.budget >= nextBidAmount;
+  
+  // Calculate player slots
+  const slotsFilled = team.slots.filled || 0;
+  const slotsTotal = team.slots.total || 18;
+  const slotsRemaining = slotsTotal - slotsFilled;
+  const slotsPercentage = (slotsFilled / slotsTotal) * 100;
+  
+  // Count player types
+  const batsmen = team.players?.filter(p => p.role === 'batsman').length || 0;
+  const bowlers = team.players?.filter(p => p.role === 'bowler').length || 0;
+  const allRounders = team.players?.filter(p => p.role === 'all-rounder').length || 0;
+  const wicketKeepers = team.players?.filter(p => p.role === 'wicket-keeper').length || 0;
+  
+  // Calculate average player cost
+  const averageCost = slotsFilled > 0 
+    ? Math.round(budgetSpent / slotsFilled) 
+    : 0;
+  
+  // Determine budget status color
+  const getBudgetStatusColor = () => {
+    if (budgetPercentage > 50) return styles.healthy;
+    if (budgetPercentage > 20) return styles.warning;
+    return styles.critical;
   };
   
   return (
-    <div className="team-balance-container">
-      {currentTeam && (
-        <motion.div 
-          className="current-team-balance"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3 }}
-        >
-          <div className="team-header">
-            <h3>{currentTeam.name}</h3>
-            <div className="team-icon">{currentTeam.icon}</div>
-          </div>
-          
-          <div className="balance-stats">
-            <div className="stat-item">
-              <span className="stat-label">Budget</span>
-              <div className="stat-value">
-                <span className="value-number">{formatCurrency(currentTeam.remainingBudget)}</span>
-                <span className="value-total">/ {formatCurrency(currentTeam.budget)}</span>
-              </div>
-              
-              <div className="progress-bar-container">
-                <div 
-                  className="progress-bar" 
-                  style={{ width: `${getBudgetPercentage(currentTeam)}%` }}
-                ></div>
-              </div>
-            </div>
-            
-            <div className="stat-item">
-              <span className="stat-label">Players</span>
-              <div className="stat-value">
-                <span className="value-number">
-                  {currentTeam.slots.total - currentTeam.slots.remaining}
-                </span>
-                <span className="value-total">/ {currentTeam.slots.total}</span>
-              </div>
-              
-              <div className="progress-bar-container">
-                <div 
-                  className="progress-bar" 
-                  style={{ width: `${getSlotsPercentage(currentTeam)}%` }}
-                ></div>
-              </div>
-            </div>
-          </div>
-          
-          <div className="player-breakdown">
-            <h4>Team Roster</h4>
-            {currentTeam.players.length > 0 ? (
-              <ul className="player-list">
-                {currentTeam.players.map(player => (
-                  <li key={player.id} className="player-item">
-                    <div className="player-info">
-                      <span className="player-name">{player.name}</span>
-                      <span className="player-role">{player.role}</span>
-                    </div>
-                    <span className="player-price">{formatCurrency(player.purchasePrice)}</span>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="no-players">No players purchased yet</p>
-            )}
-          </div>
-        </motion.div>
-      )}
-      
-      <div className="all-teams-balance">
-        <div className="section-header">
-          <h3>Team Balances</h3>
-          <button 
-            className="toggle-button"
-            onClick={() => setShowAllTeams(!showAllTeams)}
+    <motion.div 
+      className={styles.teamBalanceCard}
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4 }}
+    >
+      {/* Team Header */}
+      <div className={styles.teamHeader}>
+        <div className={styles.teamIdentity}>
+          <motion.div 
+            className={styles.teamIconContainer}
+            animate={{ rotate: [0, 5, -5, 0] }}
+            transition={{ duration: 2, repeat: Infinity, repeatType: "reverse" }}
           >
-            {showAllTeams ? 'Hide Details' : 'Show Details'}
-          </button>
+            <span className={styles.teamIcon}>{team.icon || '🏏'}</span>
+          </motion.div>
+          <div className={styles.teamDetails}>
+            <h3>{team.name}</h3>
+            <p className={styles.teamOwner}>{team.owner || 'Team Owner'}</p>
+          </div>
+        </div>
+        <motion.button 
+          className={styles.detailsToggle}
+          whileHover={{ scale: 1.1 }}
+          whileTap={{ scale: 0.95 }}
+          onClick={() => setShowDetails(!showDetails)}
+        >
+          {showDetails ? <FiChevronUp /> : <FiChevronDown />}
+        </motion.button>
+      </div>
+      
+      {/* Budget Overview */}
+      <div className={styles.budgetOverview}>
+        <div className={styles.budgetHeader}>
+          <div className={styles.budgetLabel}>
+            <FiDollarSign />
+            <span>Team Budget</span>
+          </div>
+          <div className={`${styles.budgetAmount} ${getBudgetStatusColor()}`}>
+            ₹{team.budget.toLocaleString()}
+          </div>
         </div>
         
-        <div className="teams-table-container">
-          <table className="teams-table">
-            <thead>
-              <tr>
-                <th>Team</th>
-                <th>Budget</th>
-                <th>Players</th>
-                {showAllTeams && <th>Spent</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {teams.map(team => (
-                <tr 
-                  key={team.id} 
-                  className={team.id === currentTeamId ? 'current-team-row' : ''}
-                >
-                  <td className="team-name-cell">
-                    <span className="team-icon">{team.icon}</span>
-                    <span className="team-name">{team.name}</span>
-                  </td>
-                  <td>
-                    {formatCurrency(team.remainingBudget)}
-                  </td>
-                  <td>
-                    {team.slots.total - team.slots.remaining}/{team.slots.total}
-                  </td>
-                  {showAllTeams && (
-                    <td className="spent-amount">
-                      {formatCurrency(team.budget - team.remainingBudget)}
-                    </td>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className={styles.budgetBarContainer}>
+          <motion.div 
+            className={`${styles.budgetBar} ${getBudgetStatusColor()}`}
+            initial={{ width: 0 }}
+            animate={{ width: `${budgetPercentage}%` }}
+            transition={{ duration: 1 }}
+          />
+        </div>
+        
+        <div className={styles.budgetMetrics}>
+          <div className={styles.metric}>
+            <span>Initial</span>
+            <span>₹{team.initialBudget.toLocaleString()}</span>
+          </div>
+          <div className={styles.metric}>
+            <span>Spent</span>
+            <span>{budgetSpentPercentage.toFixed(1)}%</span>
+          </div>
+          <div className={styles.metric}>
+            <span>Remaining</span>
+            <span>{budgetPercentage.toFixed(1)}%</span>
+          </div>
         </div>
       </div>
-    </div>
+      
+      {/* Quick Stats Row */}
+      <div className={styles.quickStats}>
+        <div className={styles.statBox}>
+          <FiUsers className={styles.statIcon} />
+          <div className={styles.statContent}>
+            <span className={styles.statValue}>{slotsFilled}/{slotsTotal}</span>
+            <span className={styles.statLabel}>Players</span>
+          </div>
+        </div>
+        
+        <div className={styles.statBox}>
+          <FiDollarSign className={styles.statIcon} />
+          <div className={styles.statContent}>
+            <span className={styles.statValue}>₹{averageCost.toLocaleString()}</span>
+            <span className={styles.statLabel}>Avg. Cost</span>
+          </div>
+        </div>
+        
+        <div className={styles.statBox}>
+          <FiPieChart className={styles.statIcon} />
+          <div className={styles.statContent}>
+            <span className={styles.statValue}>{slotsRemaining}</span>
+            <span className={styles.statLabel}>Remaining</span>
+          </div>
+        </div>
+      </div>
+      
+      {/* Next Bid Section */}
+      <div className={styles.nextBidSection}>
+        <div className={styles.nextBidHeader}>
+          <span>Next Bid Amount</span>
+          <motion.span 
+            className={`${styles.nextBidAmount} ${canAffordNextBid ? styles.affordable : styles.unaffordable}`}
+            animate={canAffordNextBid ? { scale: [1, 1.05, 1] } : {}}
+            transition={{ duration: 2, repeat: Infinity }}
+          >
+            ₹{nextBidAmount.toLocaleString()}
+          </motion.span>
+        </div>
+        
+        {!canAffordNextBid && (
+          <div className={styles.bidWarning}>
+            <FiActivity className={styles.warningIcon} />
+            <span>Insufficient budget for next bid</span>
+          </div>
+        )}
+      </div>
+      
+      {/* Expanded Details */}
+      <AnimatePresence>
+        {showDetails && (
+          <motion.div 
+            className={styles.expandedDetails}
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.3 }}
+          >
+            {/* Tabs */}
+            <div className={styles.detailsTabs}>
+              <button 
+                className={`${styles.tabButton} ${activeTab === 'players' ? styles.activeTab : ''}`}
+                onClick={() => setActiveTab('players')}
+              >
+                Players
+              </button>
+              <button 
+                className={`${styles.tabButton} ${activeTab === 'transactions' ? styles.activeTab : ''}`}
+                onClick={() => setActiveTab('transactions')}
+              >
+                Transactions
+              </button>
+              <button 
+                className={`${styles.tabButton} ${activeTab === 'stats' ? styles.activeTab : ''}`}
+                onClick={() => setActiveTab('stats')}
+              >
+                Stats
+              </button>
+            </div>
+            
+            {/* Tab Content */}
+            <div className={styles.tabContent}>
+              {activeTab === 'players' && (
+                <div className={styles.playersBreakdown}>
+                  <h4>Players by Role</h4>
+                  
+                  <div className={styles.roleGrid}>
+                    <div className={styles.roleItem}>
+                      <div className={styles.roleIconContainer}>
+                        <GiCricketBat className={styles.roleIcon} />
+                      </div>
+                      <div className={styles.roleDetails}>
+                        <span className={styles.roleName}>Batsmen</span>
+                        <span className={styles.roleCount}>{batsmen}</span>
+                      </div>
+                    </div>
+                    
+                    <div className={styles.roleItem}>
+                      <div className={styles.roleIconContainer}>
+                        <GiBaseballGlove className={styles.roleIcon} />
+                      </div>
+                      <div className={styles.roleDetails}>
+                        <span className={styles.roleName}>Bowlers</span>
+                        <span className={styles.roleCount}>{bowlers}</span>
+                      </div>
+                    </div>
+                    
+                    <div className={styles.roleItem}>
+                      <div className={styles.roleIconContainer}>
+                        <IoBaseballOutline className={styles.roleIcon} />
+                      </div>
+                      <div className={styles.roleDetails}>
+                        <span className={styles.roleName}>All-Rounders</span>
+                        <span className={styles.roleCount}>{allRounders}</span>
+                      </div>
+                    </div>
+                    
+                    <div className={styles.roleItem}>
+                      <div className={styles.roleIconContainer}>
+                        <BsShieldFill className={styles.roleIcon} />
+                      </div>
+                      <div className={styles.roleDetails}>
+                        <span className={styles.roleName}>Wicket-Keepers</span>
+                        <span className={styles.roleCount}>{wicketKeepers}</span>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className={styles.slotProgress}>
+                    <div className={styles.slotHeader}>
+                      <span>Squad Completion</span>
+                      <span>{slotsFilled}/{slotsTotal} ({Math.round(slotsPercentage)}%)</span>
+                    </div>
+                    <div className={styles.slotBar}>
+                      <motion.div 
+                        className={styles.slotFilled}
+                        initial={{ width: 0 }}
+                        animate={{ width: `${slotsPercentage}%` }}
+                        transition={{ duration: 1 }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              {activeTab === 'transactions' && (
+                <div className={styles.transactionsTab}>
+                  <h4>Recent Acquisitions</h4>
+                  
+                  {team.players && team.players.length > 0 ? (
+                    <div className={styles.transactionsList}>
+                      {team.players.slice(-3).reverse().map((player, index) => (
+                        <motion.div 
+                          key={player.id || index}
+                          className={styles.transactionItem}
+                          initial={{ opacity: 0, x: -20 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: index * 0.1 }}
+                        >
+                          <div className={styles.playerBasicInfo}>
+                            <span className={styles.playerName}>{player.name}</span>
+                            <span className={`${styles.playerRole} ${styles[player.role]}`}>
+                              {player.role}
+                            </span>
+                          </div>
+                          <div className={styles.transactionAmount}>
+                            ₹{player.price ? player.price.toLocaleString() : 'N/A'}
+                          </div>
+                        </motion.div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className={styles.emptyState}>
+                      <p>No players acquired yet</p>
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              {activeTab === 'stats' && (
+                <div className={styles.statsTab}>
+                  <h4>Team Analytics</h4>
+                  
+                  <div className={styles.statsGrid}>
+                    <div className={styles.statCard}>
+                      <span className={styles.statCardLabel}>Max Spent</span>
+                      <span className={styles.statCardValue}>
+                        ₹{team.players?.length > 0 
+                          ? Math.max(...team.players.map(p => p.price || 0)).toLocaleString() 
+                          : 0}
+                      </span>
+                    </div>
+                    
+                    <div className={styles.statCard}>
+                      <span className={styles.statCardLabel}>Min Spent</span>
+                      <span className={styles.statCardValue}>
+                        ₹{team.players?.length > 0 
+                          ? Math.min(...team.players.filter(p => p.price > 0).map(p => p.price || 0)).toLocaleString() 
+                          : 0}
+                      </span>
+                    </div>
+                    
+                    <div className={styles.statCard}>
+                      <span className={styles.statCardLabel}>Budget Efficiency</span>
+                      <span className={styles.statCardValue}>
+                        {budgetSpentPercentage > 0 && slotsFilled > 0
+                          ? `${(slotsFilled / slotsTotal * 100 / budgetSpentPercentage * 100).toFixed(0)}%`
+                          : '100%'}
+                      </span>
+                    </div>
+                    
+                    <div className={styles.statCard}>
+                      <span className={styles.statCardLabel}>Projected Value</span>
+                      <span className={styles.statCardValue}>
+                        {slotsFilled > 0 ? (slotsFilled * 5).toFixed(1) : 0} pts
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
   );
-};
-
-TeamBalance.propTypes = {
-  teams: PropTypes.arrayOf(
-    PropTypes.shape({
-      id: PropTypes.string.isRequired,
-      name: PropTypes.string.isRequired,
-      icon: PropTypes.string,
-      budget: PropTypes.number.isRequired,
-      remainingBudget: PropTypes.number.isRequired,
-      players: PropTypes.array.isRequired,
-      slots: PropTypes.shape({
-        total: PropTypes.number.isRequired,
-        remaining: PropTypes.number.isRequired
-      }).isRequired
-    })
-  ).isRequired,
-  currentTeamId: PropTypes.string
 };
 
 export default TeamBalance;
