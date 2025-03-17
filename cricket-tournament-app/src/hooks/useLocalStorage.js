@@ -1,17 +1,26 @@
 import { useState, useEffect } from 'react';
 
-export function useLocalStorage(key, initialValue) {
-  // Get from local storage then parse stored json or return initialValue
+/**
+ * Custom hook for using localStorage with React state
+ * @param {string} key - The localStorage key
+ * @param {any} initialValue - Initial value if key doesn't exist
+ * @returns {[any, function, function]} - [value, setValue, removeValue]
+ */
+const useLocalStorage = (key, initialValue) => {
+  // State to store our value
   const [storedValue, setStoredValue] = useState(() => {
     if (typeof window === 'undefined') {
       return initialValue;
     }
     
     try {
+      // Get from local storage by key
       const item = window.localStorage.getItem(key);
+      // Parse stored json or if none return initialValue
       return item ? JSON.parse(item) : initialValue;
     } catch (error) {
-      console.warn(`Error reading localStorage key "${key}":`, error);
+      // If error also return initialValue
+      console.error('Error reading localStorage key', key, ':', error);
       return initialValue;
     }
   });
@@ -27,35 +36,58 @@ export function useLocalStorage(key, initialValue) {
       
       // Save to local storage
       if (typeof window !== 'undefined') {
-        if (valueToStore === null) {
-          window.localStorage.removeItem(key);
-        } else {
-          window.localStorage.setItem(key, JSON.stringify(valueToStore));
-        }
+        window.localStorage.setItem(key, JSON.stringify(valueToStore));
       }
     } catch (error) {
-      console.warn(`Error setting localStorage key "${key}":`, error);
+      // A more advanced implementation would handle the error case
+      console.error('Error setting localStorage key', key, ':', error);
     }
   };
   
-  // Watch for changes to the localStorage from other components/tabs
+  // Function to remove the key from localStorage
+  const removeValue = () => {
+    try {
+      // Remove from local storage
+      if (typeof window !== 'undefined') {
+        window.localStorage.removeItem(key);
+      }
+      
+      // Reset state to initial value
+      setStoredValue(initialValue);
+    } catch (error) {
+      console.error('Error removing localStorage key', key, ':', error);
+    }
+  };
+  
+  // Listen for changes to this localStorage key in other tabs/windows
   useEffect(() => {
-    const handleStorageChange = (event) => {
-      if (event.key === key) {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    
+    // This function will be called when storage changes in other tabs
+    const handleStorageChange = (e) => {
+      if (e.key === key) {
         try {
-          setStoredValue(event.newValue ? JSON.parse(event.newValue) : initialValue);
+          // Update state with new value
+          const newValue = e.newValue ? JSON.parse(e.newValue) : initialValue;
+          setStoredValue(newValue);
         } catch (error) {
-          console.warn(`Error parsing localStorage value:`, error);
+          console.error('Error parsing localStorage value on storage event:', error);
         }
       }
     };
     
+    // Add event listener
     window.addEventListener('storage', handleStorageChange);
     
+    // Remove event listener on cleanup
     return () => {
       window.removeEventListener('storage', handleStorageChange);
     };
   }, [key, initialValue]);
   
-  return [storedValue, setValue];
-}
+  return [storedValue, setValue, removeValue];
+};
+
+export default useLocalStorage;

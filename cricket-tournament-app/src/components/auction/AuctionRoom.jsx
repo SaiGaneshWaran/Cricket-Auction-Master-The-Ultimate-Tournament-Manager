@@ -1,569 +1,362 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useAuction } from '../../hooks/useAuction';
-import { useLocalStorage } from '../../hooks/useLocalStorage';
-import BidHistory from './BidHistory';
-import TeamBalance from './TeamBalance';
-import { formatCurrency, getPlayerRoleIcon } from '../../utils/auctionHelper';
-import styles from './AuctionRoom.module.css';
+import { toast } from 'react-toastify';
+import { useTournament } from '../../contexts/TournamentContext';
+import { useAuction } from '../../contexts/AuctionContext';
+import PlayerProfile from './PlayerProfile';
+import TeamBalanceCard from './TeamBalanceCard';
+import OtherTeamsTable from './OtherTeamsTable';
+import BiddingControls from './BiddingControls.jsx';
+import AuctionHistory from './AuctionHistory.jsx';
+import WaitingLobby from './WaitingLobby';
+import Button from '../common/Button';
+import Card from '../common/Card';
 
 const AuctionRoom = () => {
+  const { auctionId } = useParams();
+  const location = useLocation();
   const navigate = useNavigate();
-  const { roomId } = useParams();
-  const [tournamentData] = useLocalStorage('tournamentData', null);
-  const [selectedTeam, setSelectedTeam] = useState(null);
-  const [showRoomInfo, setShowRoomInfo] = useState(false);
-  const [showConfetti, setShowConfetti] = useState(false);
-  
-  const {
-    auctionData,
-    currentPlayer,
-    bidHistory,
-    timer,
-    auctionStatus,
-    roomCode,
-    currentBid,
-    highestBidder,
+  const { getTournament } = useTournament();
+  const { 
     initializeAuction,
+    currentAuction,
+    currentPlayer,
+    currentBid,
+    currentBidder,
+    timer,
+    isTimerRunning,
+    auctionHistory,
+    teamBalances,
+    isAuctionActive, 
     startAuction,
     placeBid,
-    exportAuctionData,
+    completeBid,
+    skipPlayer
   } = useAuction();
+  
+  const [tournamentData, setTournamentData] = useState(null);
+  const [isCaptain, setIsCaptain] = useState(false);
+  const [selectedTeam, setSelectedTeam] = useState(null);
+  const [isOrganizer, setIsOrganizer] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [allCaptainsJoined, setAllCaptainsJoined] = useState(false);
+  const [showConfetti, setShowConfetti] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(true);
 
-  // Initialize auction when component mounts
   useEffect(() => {
-    if (!tournamentData) {
-      navigate('/setup/tournament');
-      return;
-    }
-    
-    if (!auctionData && !roomId) {
-      // Create a new auction
-      const generatedRoomId = initializeAuction(tournamentData);
-      navigate(`/auction/${generatedRoomId}`, { replace: true });
-    } else if (roomId && !auctionData) {
-      // User is joining an existing auction room
-      setShowRoomInfo(true);
-    }
-  }, [tournamentData, auctionData, roomId, navigate, initializeAuction]);
-
-  // Handle confetti display when a team completes their squad
-  useEffect(() => {
-    if (auctionData && auctionData.teams) {
-      const teamCompletedSquad = auctionData.teams.find(team => 
-        team.slots.remaining === 0 && team.slots.total > 0
-      );
-      
-      if (teamCompletedSquad) {
-        setShowConfetti(true);
-        setTimeout(() => setShowConfetti(false), 3000);
+    const loadAuction = async () => {
+      try {
+        setIsLoading(true);
+        
+        // Get data from location state or fetch from API
+        if (location.state?.tournamentData) {
+          setTournamentData(location.state.tournamentData);
+          setIsCaptain(location.state.isCaptain || false);
+          setIsOrganizer(location.state.isOrganizer || false);
+          
+          // Initialize auction with tournament data
+          initializeAuction(location.state.tournamentData);
+        } else {
+          // Fetch tournament data
+          const tournament = await getTournament(auctionId);
+          setTournamentData(tournament);
+          setIsOrganizer(false);
+          
+          // Initialize auction with tournament data
+          initializeAuction(tournament);
+        }
+      } catch (error) {
+        console.error('Error loading auction:', error);
+        toast.error('Failed to load auction. Please try again.');
+        navigate('/');
+      } finally {
+        setIsLoading(false);
       }
-    }
-  }, [auctionData]);
-
-  // Join auction as a team captain
-  const handleJoinAsTeam = (teamId) => {
-    setSelectedTeam(teamId);
-    setShowRoomInfo(false);
-  };
-
-  // Handle bidding
-  const handleBid = () => {
-    if (!selectedTeam) return;
-    
-    const success = placeBid(selectedTeam);
-    if (!success) {
-      // Show error if bid failed
-      alert('Bid failed. Check your budget and available slots.');
-    }
-  };
-
-  // Format time remaining
-  const formatTimeRemaining = (seconds) => {
-    return `${seconds}s`;
-  };
-
-  // Get player card background color based on their role
-  const getPlayerCardColor = (role) => {
-    const roleColors = {
-      'Batsman': 'linear-gradient(135deg, #ff6b6b, #f03e3e)',
-      'Bowler': 'linear-gradient(135deg, #38d9a9, #20c997)',
-      'All-Rounder': 'linear-gradient(135deg, #748ffc, #4c6ef5)',
-      'Wicket-Keeper': 'linear-gradient(135deg, #fcc419, #f59f00)',
-      'Captain': 'linear-gradient(135deg, #9775fa, #7950f2)',
     };
     
-    return roleColors[role] || 'linear-gradient(135deg, #adb5bd, #868e96)';
+    loadAuction();
+  }, [auctionId, location, navigate, getTournament, initializeAuction]);
+
+  // Check if all captains have joined
+  useEffect(() => {
+    if (tournamentData && tournamentData.teams && tournamentData.connectedUsers) {
+      const captainsJoined = tournamentData.connectedUsers.filter(u => u.role === 'captain').length;
+      setAllCaptainsJoined(captainsJoined === tournamentData.teams.length);
+    }
+  }, [tournamentData]);
+
+  // Effect to play sounds
+  useEffect(() => {
+    if (!soundEnabled) return;
+    
+    // Play sounds based on events
+    const playSound = (audioFile) => {
+      const audio = new Audio(`/sounds/${audioFile}`);
+      audio.play().catch(e => console.error('Error playing sound:', e));
+    };
+    
+    // Play timer sound when timer is low
+    if (isTimerRunning && timer <= 5 && timer > 0) {
+      playSound('timer-tick.mp3');
+    }
+    
+    // Play bid sound when new bid is placed
+    if (auctionHistory.length > 0 && !showConfetti) {
+      // Check if this is a new bid (not on component mount)
+      const lastBid = auctionHistory[auctionHistory.length - 1];
+      const timestamp = new Date(lastBid.timestamp).getTime();
+      const now = new Date().getTime();
+      
+      if (now - timestamp < 3000) { // Bid in the last 3 seconds
+        playSound('bid-placed.mp3');
+      }
+    }
+    
+    // Play confetti sound when player is sold
+    if (showConfetti) {
+      playSound('player-sold.mp3');
+    }
+  }, [timer, isTimerRunning, auctionHistory, showConfetti, soundEnabled]);
+
+  // Handle bidding
+  const handlePlaceBid = async () => {
+    if (!isCaptain || !selectedTeam) return;
+    
+    try {
+      const bidAmount = currentBid + Math.ceil(currentBid * 0.04); // 4% increment
+      await placeBid(selectedTeam.id, bidAmount);
+    } catch (error) {
+      toast.error(error.message || 'Failed to place bid');
+    }
   };
 
-  if (!tournamentData) {
+  // Handle auction start
+  const handleStartAuction = async () => {
+    if (!isOrganizer) return;
+    
+    try {
+      await startAuction(auctionId);
+      toast.success('Auction started!');
+    } catch (error) {
+      toast.error('Failed to start auction: ' + error.message);
+    }
+  };
+
+  // Handle player sold (complete bid)
+  const handlePlayerSold = async () => {
+    if (!isOrganizer) return;
+    
+    try {
+      setShowConfetti(true);
+      await completeBid();
+      
+      // Hide confetti after a delay
+      setTimeout(() => {
+        setShowConfetti(false);
+      }, 3000);
+    } catch (error) {
+      setShowConfetti(false);
+      toast.error('Failed to complete bid: ' + error.message);
+    }
+  };
+
+  // Handle player skip
+  const handleSkipPlayer = async () => {
+    if (!isOrganizer) return;
+    
+    try {
+      await skipPlayer();
+      toast.info('Player skipped');
+    } catch (error) {
+      toast.error('Failed to skip player: ' + error.message);
+    }
+  };
+
+  // Handle team selection
+  const handleTeamSelect = (team) => {
+    setSelectedTeam(team);
+    setIsCaptain(true);
+  };
+
+  // If still loading, show loader
+  if (isLoading) {
     return (
-      <div className={styles.auctionContainer}>
-        <h2>No tournament data found.</h2>
-        <button 
-          className={styles.primaryButton}
-          onClick={() => navigate('/setup/tournament')}
-        >
-          Create Tournament
-        </button>
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-32 w-32 border-t-2 border-b-2 border-blue-500"></div>
       </div>
     );
   }
 
-  if (showRoomInfo) {
+  // If auction hasn't started yet, show the waiting lobby
+  if (!isAuctionActive) {
     return (
-      <motion.div 
-        className={styles.auctionRoomJoin}
-        initial={{ opacity: 0, scale: 0.9 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 0.5 }}
-      >
-        <div className={styles.glowingBackground}></div>
-        <motion.h2 
-          className={styles.joinTitle}
-          initial={{ y: -20, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          transition={{ delay: 0.2 }}
-        >
-          Join Auction Room
-        </motion.h2>
-        
-        <motion.div 
-          className={styles.roomInfo}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.3 }}
-        >
-          <p>Room Code: <span className={styles.roomCode}>{roomId || roomCode}</span></p>
-          <p>Tournament: <span className={styles.tournamentName}>{tournamentData.name}</span></p>
-        </motion.div>
-        
-        <div className={styles.teamSelection}>
-          <motion.h3
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.4 }}
-          >
-            Select Your Team
-          </motion.h3>
-          
-          <div className={styles.teamsGrid}>
-            {tournamentData.teams.map((team, index) => (
-              <motion.div
-                key={team.id}
-                className={styles.teamSelectionCard}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.5 + index * 0.1 }}
-                whileHover={{ 
-                  scale: 1.05, 
-                  boxShadow: "0 10px 25px rgba(76, 110, 245, 0.5)" 
-                }}
-                whileTap={{ scale: 0.98 }}
-                onClick={() => handleJoinAsTeam(team.id)}
-              >
-                <div className={styles.teamIcon}>{team.icon}</div>
-                <h4>{team.name}</h4>
-                <p className={styles.teamBudget}>{formatCurrency(team.budget)}</p>
-              </motion.div>
-            ))}
-          </div>
-        </div>
-        
-        <motion.div 
-          className={styles.spectatorOption}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.8 }}
-        >
-          <motion.button 
-            className={styles.secondaryButton}
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={() => setShowRoomInfo(false)}
-          >
-            Join as Spectator
-          </motion.button>
-        </motion.div>
-      </motion.div>
-    );
-  }
-
-  if (auctionStatus === 'waiting') {
-    return (
-      <div className={styles.auctionRoomWaiting}>
-        <div className={styles.glowingBackground}></div>
-        <motion.h2 
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-        >
-          Auction Room
-        </motion.h2>
-        
-        <motion.div 
-          className={styles.roomInfo}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.2 }}
-        >
-          <p>Room Code: <span className={styles.roomCode}>{roomCode}</span></p>
-          <p>Share this code with team captains to join</p>
-        </motion.div>
-        
-        <motion.div 
-          className={styles.waitingActions}
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-        >
-          <motion.button
-            className={styles.primaryButton}
-            whileHover={{ 
-              scale: 1.05,
-              boxShadow: "0 0 20px rgba(76, 110, 245, 0.7)" 
-            }}
-            whileTap={{ scale: 0.95 }}
-            onClick={startAuction}
-          >
-            Start Auction
-          </motion.button>
-        </motion.div>
-        
-        <motion.div 
-          className={styles.teamList}
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.4 }}
-        >
-          <h3>Teams</h3>
-          <div className={styles.teamsOverview}>
-            {auctionData?.teams ? 
-              auctionData.teams.map((team, index) => (
-                <motion.div
-                  key={team.id}
-                  className={styles.teamOverviewCard}
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ delay: 0.5 + index * 0.1 }}
-                  whileHover={{ y: -5, boxShadow: "0 10px 20px rgba(0, 0, 0, 0.1)" }}
-                >
-                  <div className={styles.teamBadge}>
-                    <span className={styles.teamIcon}>{team.icon}</span>
-                    <h4>{team.name}</h4>
-                  </div>
-                  <p>Budget: <span className={styles.budgetValue}>{formatCurrency(team.budget)}</span></p>
-                  <p>Slots: <span className={styles.slotValue}>{team.slots.total}</span></p>
-                </motion.div>
-              )) 
-              : null
-            }
-          </div>
-        </motion.div>
-      </div>
-    );
-  }
-
-  if (auctionStatus === 'completed') {
-    return (
-      <div className={styles.auctionRoomCompleted}>
-        <div className={styles.glowingBackground}></div>
-        <motion.div
-          className={styles.completedContent}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.8 }}
-        >
-          <motion.h2 
-            initial={{ scale: 0.8, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            transition={{ delay: 0.2, type: "spring" }}
-          >
-            Auction Completed! 🏆
-          </motion.h2>
-          
-          <motion.div 
-            className={styles.completedActions}
-            initial={{ y: 20, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            transition={{ delay: 0.4 }}
-          >
-            <motion.button
-              className={styles.primaryButton}
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={exportAuctionData}
-            >
-              Export Auction Results
-            </motion.button>
-            
-            <motion.button
-              className={styles.secondaryButton}
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={() => navigate('/match/points')}
-            >
-              Go to Tournament Dashboard
-            </motion.button>
-          </motion.div>
-          
-          <motion.div 
-            className={styles.auctionSummary}
-            initial={{ y: 30, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            transition={{ delay: 0.6 }}
-          >
-            <h3>Auction Summary</h3>
-            
-            <div className={styles.teamsSummary}>
-              {auctionData.teams.map((team, index) => (
-                <motion.div
-                  key={team.id}
-                  className={styles.teamSummaryCard}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.8 + index * 0.1 }}
-                >
-                  <div className={styles.teamHeader}>
-                    <h4>{team.name} {team.icon}</h4>
-                    <div className={styles.teamStats}>
-                      <span>Spent: {formatCurrency(team.budget - team.remainingBudget)}</span>
-                      <span>Remaining: {formatCurrency(team.remainingBudget)}</span>
-                    </div>
-                  </div>
-                  
-                  <div className={styles.teamPlayers}>
-                    <h5>Players</h5>
-                    <div className={styles.playerList}>
-                      {team.players.map((player, playerIndex) => (
-                        <motion.div
-                          key={player.id}
-                          className={styles.playerItem}
-                          initial={{ opacity: 0, x: -10 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          transition={{ delay: 1 + playerIndex * 0.05 }}
-                        >
-                          <span className={styles.playerRoleIcon}>{getPlayerRoleIcon(player.role)}</span>
-                          <span className={styles.playerName}>{player.name}</span>
-                          <span className={styles.playerPrice}>{formatCurrency(player.purchasePrice)}</span>
-                        </motion.div>
-                      ))}
-                      
-                      {team.players.length === 0 && (
-                        <p className={styles.emptyState}>No players purchased</p>
-                      )}
-                    </div>
-                  </div>
-                </motion.div>
-              ))}
-            </div>
-          </motion.div>
-        </motion.div>
-      </div>
+      <WaitingLobby
+        tournamentData={tournamentData}
+        isOrganizer={isOrganizer}
+        onStartAuction={handleStartAuction}
+        onTeamSelect={handleTeamSelect}
+        allCaptainsJoined={allCaptainsJoined}
+        isCaptain={isCaptain}
+        selectedTeam={selectedTeam}
+      />
     );
   }
 
   return (
-    <div className={styles.auctionRoomActive}>
-      <div className={styles.glowingBackground}></div>
+    <div className="min-h-screen bg-gradient-to-br from-blue-900 via-indigo-900 to-purple-900 p-4">
+      {/* Confetti effect when player is sold */}
       {showConfetti && (
-        <div className={styles.confettiContainer}>
-          {Array(50).fill().map((_, i) => (
-            <motion.div 
-              key={i}
-              className={styles.confettiPiece}
-              initial={{ 
-                top: "-10%", 
-                left: `${Math.random() * 100}%`,
-                backgroundColor: `hsl(${Math.random() * 360}, 80%, 60%)`,
-                transform: `rotate(${Math.random() * 360}deg)`
-              }}
-              animate={{ 
-                top: "110%", 
-                left: `${Math.random() * 100}%`,
-                transform: `rotate(${Math.random() * 720}deg)`
-              }}
-              transition={{ duration: 3 + Math.random() * 2, ease: "easeIn" }}
-            />
-          ))}
+        <div className="fixed inset-0 z-50 pointer-events-none">
+          <div className="absolute inset-0 overflow-hidden">
+            {/* We would implement confetti animation here */}
+            {Array.from({ length: 150 }).map((_, i) => (
+              <motion.div
+                key={i}
+                className="absolute w-2 h-6"
+                initial={{
+                  x: Math.random() * window.innerWidth,
+                  y: -20,
+                  rotate: Math.random() * 360,
+                  backgroundColor: `hsl(${Math.random() * 360}, 100%, 50%)`
+                }}
+                animate={{
+                  y: window.innerHeight + 20,
+                  rotate: Math.random() * 360 + 360
+                }}
+                transition={{
+                  duration: Math.random() * 2 + 2,
+                  ease: "linear"
+                }}
+                style={{
+                  width: Math.random() * 10 + 5 + 'px',
+                  height: Math.random() * 20 + 10 + 'px',
+                }}
+              />
+            ))}
+          </div>
         </div>
       )}
       
-      <div className={styles.auctionHeader}>
-        <div className={styles.roomInfo}>
-          <motion.h2 
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.5 }}
-          >
-            Live Auction
-          </motion.h2>
-          <motion.p
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.5, delay: 0.2 }}
-          >
-            Room: {roomCode}
-          </motion.p>
-        </div>
-        
-        <div className={styles.timerContainer}>
-          <motion.div 
-            className={styles.timer}
-            animate={{
-              scale: timer <= 5 ? [1, 1.2, 1] : 1,
-              boxShadow: timer <= 5 ? [
-                "0 0 0 0 rgba(255, 82, 82, 0.7)",
-                "0 0 0 20px rgba(255, 82, 82, 0)",
-                "0 0 0 0 rgba(255, 82, 82, 0)"
-              ] : "0 0 0 0 rgba(76, 110, 245, 0.4)"
-            }}
-            transition={{
-              duration: 1,
-              repeat: timer <= 5 ? Infinity : 0,
-              ease: "easeInOut"
-            }}
-          >
-            {formatTimeRemaining(timer)}
-          </motion.div>
-        </div>
-      </div>
-      
-      <div className={styles.auctionMain}>
-        <div className={styles.playerShowcase}>
-          {currentPlayer ? (
-            <motion.div 
-              className={styles.playerCard}
-              initial={{ y: 50, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              exit={{ y: -50, opacity: 0 }}
-              style={{
-                background: getPlayerCardColor(currentPlayer.role),
-              }}
-            >
-              <motion.div 
-                className={styles.playerRoleIcon}
-                animate={{ 
-                  rotate: [0, 10, -10, 10, 0],
-                  scale: [1, 1.2, 1.2, 1.2, 1],
-                }}
-                transition={{ 
-                  duration: 2, 
-                  repeat: Infinity,
-                  repeatDelay: 2
-                }}
-              >
-                {getPlayerRoleIcon(currentPlayer.role)}
-              </motion.div>
-              
-              <motion.h3 
-                className={styles.playerName}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.3 }}
-              >
-                {currentPlayer.name}
-              </motion.h3>
-              <motion.p 
-                className={styles.playerRole}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.4 }}
-              >
-                {currentPlayer.role}
-              </motion.p>
-              
-              <motion.div 
-                className={styles.basePrice}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.5 }}
-              >
-                Base Price: {formatCurrency(currentPlayer.basePrice)}
-              </motion.div>
-              
-              <AnimatePresence mode="wait">
-                <motion.div 
-                  key={currentBid}
-                  className={styles.currentBid}
-                  initial={{ y: -20, opacity: 0 }}
-                  animate={{ y: 0, opacity: 1 }}
-                  exit={{ y: 20, opacity: 0 }}
-                >
-                  <span className={styles.bidLabel}>Current Bid:</span>
-                  <span className={styles.bidAmount}>{formatCurrency(currentBid)}</span>
-                  {highestBidder && (
-                    <motion.span 
-                      className={styles.highestBidder}
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      transition={{ delay: 0.2 }}
-                    >
-                      by {highestBidder.name}
-                    </motion.span>
+      <div className="container mx-auto">
+        <div className="flex flex-col lg:flex-row gap-4">
+          {/* Left column - Team Balance and Other Teams */}
+          <div className="lg:w-1/4 space-y-4">
+            {/* Team Balance Card */}
+            {selectedTeam && (
+              <TeamBalanceCard
+                team={selectedTeam}
+                teamBalance={teamBalances[selectedTeam.id]}
+              />
+            )}
+            
+            {/* Other Teams Table */}
+            <OtherTeamsTable
+              teams={tournamentData?.teams || []}
+              teamBalances={teamBalances}
+              currentTeam={selectedTeam}
+              currentBidder={currentBidder}
+            />
+          </div>
+          
+          {/* Center column - Current Player and Bidding */}
+          <div className="lg:w-2/4 space-y-4">
+            {/* Auction Header */}
+            <Card variant="glass" className="p-4">
+              <div className="flex justify-between items-center">
+                <h1 className="text-xl font-bold text-white">
+                  {tournamentData?.name || 'Cricket Auction'}
+                </h1>
+                <div className="flex space-x-2">
+                  <Button
+                    variant="glass"
+                    size="sm"
+                    onClick={() => setSoundEnabled(!soundEnabled)}
+                    icon={
+                      soundEnabled ? (
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.707.707L4.586 13H2a1 1 0 01-1-1V8a1 1 0 011-1h2.586l3.707-3.707a1 1 0 011.09-.217zM14.657 2.929a1 1 0 011.414 0A9.972 9.972 0 0119 10a9.972 9.972 0 01-2.929 7.071 1 1 0 01-1.414-1.414A7.971 7.971 0 0017 10c0-2.21-.894-4.208-2.343-5.657a1 1 0 010-1.414zm-2.829 2.828a1 1 0 011.415 0A5.983 5.983 0 0115 10a5.984 5.984 0 01-1.757 4.243 1 1 0 01-1.415-1.415A3.984 3.984 0 0013 10a3.983 3.983 0 00-1.172-2.828 1 1 0 010-1.415z" clipRule="evenodd" />
+                        </svg>
+                      ) : (
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.707.707L4.586 13H2a1 1 0 01-1-1V8a1 1 0 011-1h2.586l3.707-3.707a1 1 0 011.09-.217zM12.293 7.293a1 1 0 011.414 0L15 8.586l1.293-1.293a1 1 0 111.414 1.414L16.414 10l1.293 1.293a1 1 0 01-1.414 1.414L15 11.414l-1.293 1.293a1 1 0 01-1.414-1.414L13.586 10l-1.293-1.293a1 1 0 010-1.414z" clipRule="evenodd" />
+                        </svg>
+                      )
+                    }
+                  />
+                  {isOrganizer && (
+                    <>
+                      <Button
+                        variant="danger"
+                        size="sm"
+                        onClick={handleSkipPlayer}
+                      >
+                        Skip Player
+                      </Button>
+                      <Button
+                        variant="success"
+                        size="sm"
+                        onClick={handlePlayerSold}
+                      >
+                        Sold!
+                      </Button>
+                    </>
                   )}
+                </div>
+              </div>
+            </Card>
+            
+            {/* Current Player Profile */}
+            <AnimatePresence mode="wait">
+              {currentPlayer ? (
+                <motion.div
+                  key={currentPlayer.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  <PlayerProfile
+                    player={currentPlayer}
+                    currentBid={currentBid}
+                    currentBidder={currentBidder}
+                    teams={tournamentData?.teams || []}
+                    timer={timer}
+                    isTimerRunning={isTimerRunning}
+                  />
                 </motion.div>
-              </AnimatePresence>
-            </motion.div>
-          ) : (
-            <div className={styles.noPlayerMessage}>
-              Waiting for auction to start...
-            </div>
-          )}
-        </div>
-        
-        <div className={styles.auctionSidebar}>
-          <TeamBalance 
-            teams={auctionData.teams}
-            currentTeamId={selectedTeam}
-          />
+              ) : (
+                <Card variant="glass" className="p-6 flex flex-col items-center justify-center min-h-[300px]">
+                  <div className="text-center">
+                    <h3 className="text-xl font-bold text-white mb-4">No Player Available</h3>
+                    <p className="text-blue-200">The auction has ended or no player is currently being auctioned.</p>
+                  </div>
+                </Card>
+              )}
+            </AnimatePresence>
+            
+            {/* Bidding Controls */}
+            {currentPlayer && selectedTeam && (
+              <BiddingControls
+                currentBid={currentBid}
+                currentBidder={currentBidder}
+                teamId={selectedTeam.id}
+                teamBalance={teamBalances[selectedTeam.id]}
+                onPlaceBid={handlePlaceBid}
+                disabled={!isCaptain || currentBidder === selectedTeam.id}
+              />
+            )}
+          </div>
           
-          <BidHistory bidHistory={bidHistory} />
-          
-          {selectedTeam && (
-            <motion.div 
-              className={styles.biddingActions}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.3 }}
-            >
-              <motion.button
-                className={styles.bidButton}
-                whileHover={{ 
-                  scale: 1.05,
-                  boxShadow: "0 0 15px rgba(76, 110, 245, 0.7)"
-                }}
-                whileTap={{ scale: 0.95 }}
-                onClick={handleBid}
-                disabled={highestBidder && highestBidder.id === selectedTeam}
-              >
-                Place Bid
-              </motion.button>
-            </motion.div>
-          )}
+          {/* Right column - Auction History */}
+          <div className="lg:w-1/4 space-y-4">
+            <AuctionHistory
+              history={auctionHistory}
+              teams={tournamentData?.teams || []}
+            />
+          </div>
         </div>
       </div>
-      
-      <motion.div 
-        className={styles.auctionFooter}
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.6 }}
-      >
-        <div className={styles.auctionProgress}>
-          <motion.div 
-            className={styles.progressBar}
-            initial={{ width: "0%" }}
-            animate={{ 
-              width: `${(auctionData.soldPlayers.length / (auctionData.soldPlayers.length + auctionData.availablePlayers.length)) * 100}%` 
-            }}
-            transition={{ duration: 0.8 }}
-          />
-          <p>
-            Players: {auctionData.soldPlayers.length} / {auctionData.soldPlayers.length + auctionData.availablePlayers.length} sold
-          </p>
-        </div>
-      </motion.div>
     </div>
   );
 };

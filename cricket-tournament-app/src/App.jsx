@@ -1,50 +1,74 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { useState, useEffect } from 'react';
-import Layout from './components/shared/Layout';
-import TournamentSetup from './components/setup/TournamentSetup';
-import TeamSetup from './components/setup/TeamSetup';
-import AuctionRoom from './components/auction/AuctionRoom';
-import MatchSimulator from './components/match/MatchSimulator';
-import LiveScoreboard from './components/match/LiveScoreboard';
-import PointsTable from './components/match/PointsTable';
-import { useLocalStorage } from './hooks/useLocalStorage';
-import './App.css';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { AnimatePresence } from 'framer-motion';
+import { ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
+
+// Context Providers
+import { TournamentProvider } from './contexts/TournamentContext.jsx';
+import { AuctionProvider } from './contexts/AuctionContext.jsx';
+import { MatchProvider } from './contexts/MatchContext.jsx';
+
+// Pages
+import Home from './pages/Home';
+import Tournament from './pages/Tournament';
+import Auction from './pages/Auction';
+import Analysis from './pages/Analysis';
+import Matches from './pages/Matches';
+import Dashboard from './pages/Dashboard';
+
+// Components
+import Loader from './components/common/Loader';
 
 function App() {
-  const [tournamentData, setTournamentData] = useLocalStorage('tournamentData', null);
-  const [isInitialized, setIsInitialized] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    setIsInitialized(true);
+    // Simulate initial loading
+    const timer = setTimeout(() => {
+      setIsLoading(false);
+    }, 1500);
+
+    return () => clearTimeout(timer);
   }, []);
 
-  if (!isInitialized) {
-    return <div className="loading">Loading...</div>;
+  if (isLoading) {
+    return <Loader />;
   }
 
   return (
-    <Router>
-      <Routes>
-        <Route path="/" element={<Layout />}>
-          <Route index element={
-            tournamentData ? 
-              <PointsTable /> : 
-              <TournamentSetup setTournamentData={setTournamentData} />
-          } />
-          <Route path="setup">
-            <Route path="tournament" element={<TournamentSetup setTournamentData={setTournamentData} />} />
-            <Route path="teams" element={<TeamSetup />} />
-          </Route>
-          <Route path="auction" element={<AuctionRoom />} />
-          <Route path="auction/:roomId" element={<AuctionRoom />} />
-          <Route path="match">
-            <Route path="simulate" element={<MatchSimulator />} />
-            <Route path="scoreboard" element={<LiveScoreboard />} />
-            <Route path="points" element={<PointsTable />} />
-          </Route>
-        </Route>
-      </Routes>
-    </Router>
+    
+      <TournamentProvider>
+        <AuctionProvider>
+          <MatchProvider>
+            <div className="min-h-screen bg-gradient-to-br from-blue-900 via-indigo-900 to-purple-900 text-white">
+              <AnimatePresence mode="wait">
+                <Routes>
+                  <Route path="/" element={<Home />} />
+                  <Route path="/tournament/:tournamentId" element={<Tournament />} />
+                  <Route path="/auction/:auctionId" element={<Auction />} />
+                  <Route path="/analysis/:tournamentId" element={<Analysis />} />
+                  <Route path="/matches/:tournamentId" element={<Matches />} />
+                  <Route path="/dashboard/:tournamentId" element={<Dashboard />} />
+                </Routes>
+              </AnimatePresence>
+              <ToastContainer 
+                position="bottom-right"
+                autoClose={3000}
+                hideProgressBar={false}
+                newestOnTop
+                closeOnClick
+                rtl={false}
+                pauseOnFocusLoss
+                draggable
+                pauseOnHover
+                theme="dark"
+              />
+            </div>
+          </MatchProvider>
+        </AuctionProvider>
+      </TournamentProvider>
+    
   );
 }
 
