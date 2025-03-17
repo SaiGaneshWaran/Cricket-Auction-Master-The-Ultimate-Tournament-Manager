@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useState, useContext, useEffect, useCallback, useMemo } from 'react';
 import { toast } from 'react-toastify';
 import { useTournament } from './TournamentContext';
 import { generateUniqueId } from '../utils/helpers';
@@ -9,7 +9,7 @@ const AuctionContext = createContext();
 export const useAuction = () => useContext(AuctionContext);
 
 export const AuctionProvider = ({ children }) => {
-  const { updateTournament } = useTournament();
+  const { currentTournament } = useTournament();
   const [currentAuction, setCurrentAuction] = useState(null);
   const [currentPlayer, setCurrentPlayer] = useState(null);
   const [currentBid, setCurrentBid] = useState(0);
@@ -21,6 +21,20 @@ export const AuctionProvider = ({ children }) => {
   const [soldPlayers, setSoldPlayers] = useState([]);
   const [teamBalances, setTeamBalances] = useState({});
   const [isAuctionActive, setIsAuctionActive] = useState(false);
+
+
+  const auctionData = useMemo(() => {
+    if (!currentTournament) return null;
+    
+    return {
+      tournamentId: currentTournament.id,
+      teams: currentTournament.teams,
+      players: currentTournament.playerPool
+    };
+  }, [currentTournament]);
+
+  
+
 
   // Initialize auction state from tournament data
   const initializeAuction = (tournamentData) => {
@@ -310,34 +324,18 @@ export const AuctionProvider = ({ children }) => {
   };
 
   // Start the auction
-  const startAuction = (tournamentId) => {
-    try {
-      // Set auction active
-      setIsAuctionActive(true);
-      
-      // Start with the first player
-      if (remainingPlayers.length > 0) {
-        const firstPlayer = remainingPlayers[0];
-        setCurrentPlayer(firstPlayer);
-        setCurrentBid(firstPlayer.basePrice);
-        setCurrentBidder(null);
-        
-        // Reset and start timer
-        resetTimer();
-        startTimer();
-      }
-      
-      // Save auction state
-      saveAuctionState();
-      
-      return true;
-    } catch (error) {
-      console.error('Error starting auction:', error);
-      toast.error(error.message || 'Failed to start auction');
-      throw error;
+  const startAuction = useCallback(() => {
+    if (!currentTournament) return;
+    
+    setIsAuctionActive(true);
+    // Select first player
+    if (currentTournament.playerPool && currentTournament.playerPool.length > 0) {
+      setCurrentPlayer(currentTournament.playerPool[0]);
+      setCurrentBid(currentTournament.playerPool[0].basePrice || 0);
+      setTimer(30);
+      setAuctionHistory([]);
     }
-  };
-
+  }, [currentTournament]);
   // End the auction
   const endAuction = () => {
     try {
@@ -358,6 +356,29 @@ export const AuctionProvider = ({ children }) => {
       throw error;
     }
   };
+  useEffect(() => {
+    if (!isAuctionActive) return;
+    
+    const timerId = setInterval(() => {
+      setTimer(prevTimer => {
+        if (prevTimer <= 0) {
+          // Handle timeout
+          return 0;
+        }
+        return prevTimer - 1;
+      });
+    }, 1000);
+    
+    return () => clearInterval(timerId);
+  }, [isAuctionActive]);
+
+  // Handle timer reaching zero
+  useEffect(() => {
+    if (timer === 0 && currentPlayer && isAuctionActive) {
+      // Handle player auction completion
+      // This should be optimized to prevent excessive state changes
+    }
+  }, [timer, currentPlayer, isAuctionActive]);
 
   const contextValue = {
     currentAuction,
@@ -385,8 +406,34 @@ export const AuctionProvider = ({ children }) => {
   };
 
   return (
-    <AuctionContext.Provider value={contextValue}>
+    <AuctionContext.Provider value={{
+      isAuctionActive,
+      currentAuction,
+    currentPlayer,
+    currentBid,
+    currentBidder,
+    timer,
+    isTimerRunning,
+    auctionHistory,
+    remainingPlayers,
+    soldPlayers,
+    teamBalances,
+    isAuctionActive,
+    initializeAuction,
+    startTimer,
+    pauseTimer,
+    resetTimer,
+    placeBid,
+    completeBid,
+    skipPlayer,
+    getNextPlayer,
+    saveAuctionState,
+    startAuction,
+    endAuction
+      // other methods...
+    }}>
       {children}
     </AuctionContext.Provider>
   );
 };
+

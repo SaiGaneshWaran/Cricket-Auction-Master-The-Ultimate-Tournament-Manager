@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { toast } from 'react-toastify';
+import * as dataService from '../services/dataService';
+
 import { generatePlayerPool } from '../services/tournamentService';
 import { 
   saveTournamentToStorage, 
@@ -17,6 +18,7 @@ export const TournamentProvider = ({ children }) => {
   const [tournaments, setTournaments] = useState({});
   const [currentTournament, setCurrentTournament] = useState(null);
   const [loading, setLoading] = useState(true);
+  
 
   // Load tournaments from localStorage on initial render
   useEffect(() => {
@@ -84,10 +86,10 @@ export const TournamentProvider = ({ children }) => {
         [tournamentId]: newTournament
       }));
       
-      // Save to localStorage
-      saveTournamentToStorage(tournamentId, newTournament);
       
-      return { tournamentId, captainCode, viewerCode };
+      return dataService.createTournament(tournamentData);
+      
+      
     } catch (error) {
       console.error('Error creating tournament:', error);
       throw new Error('Failed to create tournament. Please try again.');
@@ -95,27 +97,23 @@ export const TournamentProvider = ({ children }) => {
   };
 
   // Join a tournament
-  const joinTournament = (code, isViewer = false) => {
-    try {
-      const accessCodeKey = isViewer ? 'viewerCode' : 'captainCode';
-      
-      // Find tournament by code
-      const tournament = Object.values(tournaments).find(t => t[accessCodeKey] === code);
-      
-      if (!tournament) {
-        throw new Error(`Invalid ${isViewer ? 'viewer' : 'captain'} code. Please check and try again.`);
-      }
-      
-      setCurrentTournament(tournament);
-      
-      return { 
-        tournamentId: tournament.id, 
-        tournamentData: tournament 
-      };
-    } catch (error) {
-      console.error('Error joining tournament:', error);
-      throw new Error(error.message || 'Failed to join tournament. Please try again.');
+  const joinTournament = async (code, isViewer = false) => {
+    const result = await dataService.validateTournamentCode(
+      code, 
+      isViewer ? 'viewer' : 'captain'
+    );
+    
+    if (!result.valid) {
+      throw new Error('Invalid tournament code');
     }
+    
+    const tournamentData = await dataService.getTournamentById(result.tournamentId);
+    if (!tournamentData) {
+      throw new Error('Tournament not found');
+    }
+    
+    setCurrentTournament(tournamentData);
+    return { tournamentId: result.tournamentId, tournamentData };
   };
 
   // Get a tournament by ID
@@ -255,8 +253,17 @@ export const TournamentProvider = ({ children }) => {
   };
 
   return (
-    <TournamentContext.Provider value={contextValue}>
+    <TournamentContext.Provider value={{ 
+      currentTournament,
+      createTournament,
+      joinTournament,
+      getTournament,
+      updateTournament,
+      startAuction,
+      endAuction
+    }}>
       {children}
     </TournamentContext.Provider>
   );
 };
+
