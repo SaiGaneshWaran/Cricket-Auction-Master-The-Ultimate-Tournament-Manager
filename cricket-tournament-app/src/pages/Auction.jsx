@@ -1,328 +1,243 @@
-// src/pages/Auction.jsx
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { 
+  Box, 
+  Container, 
+  Typography, 
+  Paper, 
+  Button, 
+  CircularProgress,
+  Alert
+} from '@mui/material';
+import { toast } from 'react-toastify';
+
+import { useTournament } from '../contexts/TournamentContext';
 import { useAuction } from '../contexts/AuctionContext';
-import AuctionRoom from '../components/auction/AuctionRoom';
+import { useAuth } from '../contexts/AuthContext';
+
 import WaitingLobby from '../components/auction/WaitingLobby';
-import TeamBalanceCard from '../components/auction/TeamBalanceCard';
-import OtherTeamsTable from '../components/auction/OtherTeamsTable';
-import PlayerProfile from '../components/auction/PlayerProfile';
-import BiddingControls from '../components/auction/BiddingControls.jsx';
-import AuctionHistory from '../components/auction/AuctionHistory.jsx';
-import Loader from '../components/common/Loader';
-import Modal from '../components/common/Modal.jsx';
-import { getAuctionById, joinAuctionAsCaptain } from '../services/auctionService';
-import { getFromStorage } from '../utils/storage.js';
+import AuctionRoom from '../components/auction/AuctionRoom';
 
 const Auction = () => {
-  const { id, role, code } = useParams();
+  // FIX #1: Explicitly extract tournamentId from params
+  const { tournamentId } = useParams();
+  
   const navigate = useNavigate();
+  const location = useLocation();
+  const { currentUser } = useAuth();
+  const { getTournament } = useTournament();
   const { 
-    auction, 
-    setAuction, 
-    currentTeam, 
-    setCurrentTeam,
-    loading,
-    setLoading,
-    error,
-    setError
+    currentAuction, 
+    initializeAuctionState, 
+    isInitialized,
+    loading: auctionLoading
   } = useAuction();
+  
+  const [loading, setLoading] = useState(true);
+  const [tournament, setTournament] = useState(null);
+  const [error, setError] = useState(null);
+  const [auctionStarted, setAuctionStarted] = useState(false);
+  const [userRole, setUserRole] = useState('viewer');
+  const [userTeamId, setUserTeamId] = useState(null);
+  
+  // Test mode detection
+  const inTestMode = location.state?.isTestMode || false;
+  const searchParams = new URLSearchParams(location.search);
+  const queryTestMode = searchParams.get('testMode') === 'true';
+  const effectiveTestMode = inTestMode || queryTestMode;
 
-  const [showTeamSelector, setShowTeamSelector] = useState(false);
-  const [availableTeams, setAvailableTeams] = useState([]);
-  const [selectedTeamId, setSelectedTeamId] = useState('');
-  const [isViewer, setIsViewer] = useState(false);
-
-  // Initialization and connection
+  // Debug logging
   useEffect(() => {
-    const initializeAuction = async () => {
-      setLoading(true);
+    console.log('Auction component parameters:', {
+      tournamentId,
+      pathname: location.pathname,
+      testMode: effectiveTestMode
+    });
+  }, [tournamentId, location.pathname, effectiveTestMode]);
+
+  // Load tournament
+  useEffect(() => {
+    const loadTournament = async () => {
       try {
-        // If we have an ID, try to load directly
-        if (id) {
-          const auctionData = getAuctionById(id);
-          if (!auctionData) {
-            throw new Error('Auction not found');
-          }
-          setAuction(auctionData);
-          
-          // Check if we already have a team selection in local storage
-          const savedTeam = getFromStorage(`auction_team_${id}`);
-          if (savedTeam) {
-            setCurrentTeam(savedTeam);
-          }
-          
-        } 
-        // If we have a code, try to join as captain or viewer
-        else if (code) {
-          if (role === 'captain') {
-            // For captains, we first need to show the team selector
-            // Get auction by captain code
-            const allAuctions = Object.keys(localStorage)
-              .filter(key => key.startsWith('cricket_auction_data'))
-              .map(key => JSON.parse(localStorage.getItem(key)));
-            
-            const targetAuction = allAuctions.find(a => a.captainCode === code);
-            
-            if (!targetAuction) {
-              throw new Error('Invalid captain code');
-            }
-            
-            setAuction(targetAuction);
-            
-            // Get available (not connected) teams
-            const teams = targetAuction.teams.filter(team => !team.connected);
-            if (teams.length === 0) {
-              throw new Error('All teams are already connected');
-            }
-            
-            setAvailableTeams(teams);
-            setShowTeamSelector(true);
-          } 
-          else if (role === 'viewer') {
-            // For viewers, we can directly join
-            const allAuctions = Object.keys(localStorage)
-              .filter(key => key.startsWith('cricket_auction_data'))
-              .map(key => JSON.parse(localStorage.getItem(key)));
-            
-            const targetAuction = allAuctions.find(a => a.viewerCode === code);
-            
-            if (!targetAuction) {
-              throw new Error('Invalid viewer code');
-            }
-            
-            setAuction(targetAuction);
-            setIsViewer(true);
-          } else {
-            throw new Error('Invalid role');
-          }
-        } else {
-          throw new Error('Missing auction ID or join code');
+        if (!tournamentId) {
+          console.error('No tournament ID in URL parameters');
+          setError('No tournament ID found. Please go back to tournaments.');
+          setLoading(false);
+          return;
         }
+
+        setLoading(true);
+        const tournamentData = await getTournament(tournamentId);
+        
+        if (!tournamentData) {
+          setError(`Tournament with ID ${tournamentId} not found`);
+          setLoading(false);
+          return;
+        }
+
+        console.log('Tournament loaded:', tournamentData.name);
+        
+        // Set tournament with test mode flag
+        setTournament({
+          ...tournamentData,
+          isTestMode: effectiveTestMode
+        });
+        
+        // Set user role
+        if (effectiveTestMode) {
+          setUserRole('admin');
+        } else if (tournamentData.creator === currentUser?.uid) {
+          setUserRole('admin');
+        } else {
+          setUserRole('viewer');
+        }
+        
+        // Initialize auction
+        try {
+          const auctionData = await initializeAuctionState(tournamentData);
+          console.log('Auction initialized:', auctionData?.id);
+          
+          // Set auction as started if already active or in test mode
+          if (auctionData?.status === 'active' || effectiveTestMode) {
+            setAuctionStarted(true);
+          }
+        } catch (error) {
+          console.error('Error initializing auction:', error);
+        }
+        
+        setLoading(false);
       } catch (err) {
-        setError(err.message);
-        console.error('Error initializing auction:', err);
-      } finally {
+        console.error('Error loading tournament:', err);
+        setError(err.message || 'Failed to load tournament');
         setLoading(false);
       }
     };
-
-    initializeAuction();
-  }, [id, role, code, setAuction, setLoading, setError]);
-
-  // Join as team captain
-  const handleTeamSelect = async () => {
-    if (!selectedTeamId) {
-      setError('Please select a team');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const updatedAuction = joinAuctionAsCaptain(code, selectedTeamId);
-      setAuction(updatedAuction);
-      
-      const selectedTeam = updatedAuction.teams.find(t => t.id === selectedTeamId);
-      setCurrentTeam(selectedTeam);
-      
-      // Save to local storage
-      localStorage.setItem(`auction_team_${updatedAuction.id}`, JSON.stringify(selectedTeam));
-      
-      // Hide selector and redirect to the auction page with ID
-      setShowTeamSelector(false);
-      navigate(`/auction/${updatedAuction.id}`);
-    } catch (err) {
-      setError(err.message);
-      console.error('Error joining as captain:', err);
-    } finally {
-      setLoading(false);
+    
+    loadTournament();
+  }, [tournamentId, getTournament, initializeAuctionState, effectiveTestMode, currentUser]);
+  
+  // Handle auction start
+  const handleAuctionStart = () => {
+    setAuctionStarted(true);
+    toast.success('Auction has started!');
+  };
+  
+  // Debug function to clear data
+  const handleClearStorage = () => {
+    if (window.confirm('Clear all auction data and reload?')) {
+      localStorage.removeItem('cricket_auctions');
+      window.location.reload();
     }
   };
 
-  // Sync auction state (would use WebSockets in a real app)
-  useEffect(() => {
-    if (!auction) return;
-
-    const interval = setInterval(() => {
-      const freshData = getAuctionById(auction.id);
-      if (freshData) {
-        setAuction(freshData);
-        
-        // Update current team if needed
-        if (currentTeam) {
-          const updatedTeam = freshData.teams.find(t => t.id === currentTeam.id);
-          if (updatedTeam) {
-            setCurrentTeam(updatedTeam);
-          }
-        }
-      }
-    }, 1000); // Poll every second
-
-    return () => clearInterval(interval);
-  }, [auction, currentTeam, setAuction, setCurrentTeam]);
-
-  // Handle auction completion
-  useEffect(() => {
-    if (auction && auction.status === 'completed') {
-      // Navigate to analysis page
-      navigate(`/analysis/${auction.tournamentId}`);
-    }
-  }, [auction, navigate]);
-
   // Loading state
-  if (loading) {
-    return <Loader message="Loading auction..." />;
+  if (loading || auctionLoading) {
+    return (
+      <Container maxWidth="md" sx={{ py: 4 }}>
+        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+          <CircularProgress />
+          <Typography variant="h6">
+            Loading auction...
+          </Typography>
+          
+          <Paper sx={{ p: 2, mt: 2, width: '100%' }}>
+            <Typography variant="subtitle2" gutterBottom>Debug Information:</Typography>
+            <ul style={{ listStyleType: 'none', padding: 0 }}>
+              <li>Tournament ID: {tournamentId || '❌ Missing'}</li>
+              <li>URL Path: {location.pathname}</li>
+              <li>Test Mode: {effectiveTestMode ? 'ON' : 'OFF'}</li>
+            </ul>
+            
+            <Box sx={{ mt: 2 }}>
+              <Button 
+                variant="outlined"
+                size="small"
+                onClick={() => navigate('/tournaments')}
+              >
+                Back to Tournaments
+              </Button>
+            </Box>
+          </Paper>
+        </Box>
+      </Container>
+    );
   }
-
+  
   // Error state
   if (error) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-gray-100">
-        <div className="text-red-500 text-xl mb-4">Error: {error}</div>
-        <button 
-          className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-          onClick={() => navigate('/')}
-        >
-          Return to Home
-        </button>
-      </div>
+      <Container maxWidth="md" sx={{ py: 4 }}>
+        <Alert severity="error" sx={{ mb: 3 }}>
+          {error}
+        </Alert>
+        <Button variant="outlined" onClick={() => navigate('/tournaments')}>
+          Back to Tournaments
+        </Button>
+      </Container>
     );
   }
-
-  // Team selection modal for captains
-  if (showTeamSelector) {
-    return (
-      <Modal
-        isOpen={true}
-        title="Select Your Team"
-        onClose={() => navigate('/')}
-      >
-        <div className="p-4">
-          <p className="mb-4">Please select the team you want to captain:</p>
+  
+  return (
+    <Container maxWidth="xl" sx={{ py: 3 }}>
+      {/* Tournament header */}
+      <Paper sx={{ p: 2, mb: 3 }}>
+        <Typography variant="h4" gutterBottom>
+          {tournament?.name || 'Tournament'}
+        </Typography>
+        
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Typography variant="body1" color="text.secondary">
+            {tournament?.teams?.length || 0} Teams • {tournament?.players?.length || 0} Players
+          </Typography>
           
-          <div className="mb-4">
-            <select
-              className="w-full p-2 border rounded"
-              value={selectedTeamId}
-              onChange={(e) => setSelectedTeamId(e.target.value)}
-            >
-              <option value="">-- Select a Team --</option>
-              {availableTeams.map(team => (
-                <option key={team.id} value={team.id}>
-                  {team.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          
-          <div className="flex justify-end">
-            <button
-              className="px-4 py-2 bg-gray-300 text-gray-700 rounded mr-2 hover:bg-gray-400"
-              onClick={() => navigate('/')}
-            >
-              Cancel
-            </button>
-            <button
-              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-              onClick={handleTeamSelect}
-              disabled={!selectedTeamId}
-            >
-              Join Auction
-            </button>
-          </div>
-        </div>
-      </Modal>
-    );
-  }
-
-  // Main auction view
-  if (auction) {
-    // Waiting lobby view when status is 'waiting'
-    if (auction.status === 'waiting') {
-      return (
-        <WaitingLobby 
-          auction={auction}
-          currentTeam={currentTeam}
-          isAdmin={auction.createdBy === currentTeam?.id}
-          isViewer={isViewer}
-        />
-      );
-    }
-    
-    // Active auction view
-    return (
-      <div className="bg-gray-100 min-h-screen">
-        <div className="container mx-auto px-4 py-6">
-          <div className="mb-4">
-            <h1 className="text-2xl font-bold">{auction.tournamentName || 'Cricket Auction'}</h1>
-            <p className="text-gray-600">
-              {auction.status === 'active' ? 'Auction in progress' : 'Auction completed'}
-            </p>
-          </div>
-          
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-            {/* Left sidebar - Team balance & other teams */}
-            <div className="lg:col-span-3 space-y-4">
-              {!isViewer && currentTeam && (
-                <TeamBalanceCard 
-                  team={currentTeam} 
-                  auctionId={auction.id} 
-                />
-              )}
-              
-              <OtherTeamsTable 
-                teams={auction.teams} 
-                currentTeamId={currentTeam?.id} 
-              />
-            </div>
+          <Button variant="outlined" onClick={() => navigate(`/tournament/${tournamentId}`)}>
+            Tournament Details
+          </Button>
+        </Box>
+      </Paper>
+      
+      {/* Test mode indicator */}
+      {effectiveTestMode && (
+        <Paper sx={{ p: 2, mb: 3, bgcolor: 'error.dark' }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="body1" color="white">
+              🧪 Running in TEST MODE - Captain validation is bypassed
+            </Typography>
             
-            {/* Main auction area */}
-            <div className="lg:col-span-6">
-              <AuctionRoom 
-                auction={auction}
-                currentPlayer={auction.currentPlayer}
-                isViewer={isViewer}
-              />
-              
-              {auction.currentPlayer && (
-                <div className="mt-4">
-                  <PlayerProfile 
-                    player={auction.currentPlayer}
-                    isDetailed={true}
-                  />
-                </div>
-              )}
-              
-              {!isViewer && currentTeam && auction.status === 'active' && (
-                <div className="mt-4">
-                  <BiddingControls 
-                    auctionId={auction.id}
-                    playerId={auction.currentPlayer?.id}
-                    teamId={currentTeam.id}
-                    currentBid={auction.currentPlayer?.currentBid || 0}
-                    maxBudget={currentTeam.budget}
-                    timerStart={auction.timerStart}
-                    timerDuration={auction.timerDuration}
-                  />
-                </div>
-              )}
-            </div>
-            
-            {/* Right sidebar - Auction history */}
-            <div className="lg:col-span-3">
-              <AuctionHistory 
-                history={auction.history}
-                teams={auction.teams}
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Fallback
-  return <Loader message="Initializing auction..." />;
+            <Button 
+              variant="outlined" 
+              color="inherit"
+              size="small"
+              onClick={handleClearStorage}
+            >
+              Clear Auction Data
+            </Button>
+          </Box>
+        </Paper>
+      )}
+      
+      {/* Auction content */}
+      <Box sx={{ mb: 4 }}>
+        {!isInitialized ? (
+          <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
+            <CircularProgress />
+          </Box>
+        ) : !auctionStarted ? (
+          <WaitingLobby 
+            tournament={tournament}
+            onStart={handleAuctionStart}
+            isTestMode={effectiveTestMode}
+          />
+        ) : (
+          <AuctionRoom 
+            tournament={tournament}
+            isAdmin={userRole === 'admin' || effectiveTestMode}
+            teamId={userTeamId}
+          />
+        )}
+      </Box>
+    </Container>
+  );
 };
 
 export default Auction;

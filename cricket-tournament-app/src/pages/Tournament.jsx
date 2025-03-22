@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useLocation, useNavigate, Link } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'react-toastify';
 import { useTournament } from '../contexts/TournamentContext';
 import Button from '../components/common/Button';
@@ -12,8 +12,9 @@ const Tournament = () => {
   const { tournamentId } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
-  const { getTournament, startAuction } = useTournament();
   
+  const [isStartingAuction, setIsStartingAuction] = useState(false);
+  const { getTournament, startAuction, isTestMode, setIsTestMode } = useTournament();
   const [tournament, setTournament] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [showCodes, setShowCodes] = useState(false);
@@ -21,56 +22,110 @@ const Tournament = () => {
   const [isCreator, setIsCreator] = useState(false);
   
   // Load tournament data
-  useEffect(() => {
-    const loadTournament = async () => {
-      try {
-        setIsLoading(true);
-        
-        // Check if codes were passed via location state (just created tournament)
-        if (location.state?.captainCode && location.state?.viewerCode) {
-          setCodes({
-            captainCode: location.state.captainCode,
-            viewerCode: location.state.viewerCode
-          });
-          setShowCodes(true);
-          setIsCreator(location.state.isCreator || false);
-        }
-        
-        // Get tournament data
-        const data = await getTournament(tournamentId);
-        setTournament(data);
-      } catch (error) {
-        toast.error('Failed to load tournament data');
-        console.error(error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    
-    loadTournament();
-  }, [tournamentId, location, getTournament]);
-  
-  // Handle start auction
-  const handleStartAuction = async () => {
+  // Update the useEffect hook for handling location state and loading tournament data
+
+useEffect(() => {
+  const loadTournament = async () => {
     try {
-      await startAuction(tournamentId);
-      toast.success('Auction started successfully');
-      navigate(`/auction/${tournamentId}`, { state: { isOrganizer: true } });
+      setIsLoading(true);
+      
+      // Check if codes were passed via location state (just created tournament)
+      if (location.state?.captainCode && location.state?.viewerCode) {
+        setCodes({
+          captainCode: location.state.captainCode,
+          viewerCode: location.state.viewerCode
+        });
+        setShowCodes(true);
+        setIsCreator(location.state.isCreator || false);
+        
+        // Clear location state after using it to prevent reusing
+        const cleanHistory = () => {
+          window.history.replaceState(
+            {}, 
+            document.title
+          );
+        };
+        setTimeout(cleanHistory, 100);
+      }
+      
+      console.log('Loading tournament with ID:', tournamentId);
+      
+      // Get tournament data
+      const data = await getTournament(tournamentId);
+      console.log('Tournament data loaded:', data);
+      setTournament(data);
     } catch (error) {
-      toast.error('Failed to start auction');
+      toast.error('Failed to load tournament data');
       console.error(error);
+    } finally {
+      setIsLoading(false);
     }
   };
   
+  loadTournament();
+}, [tournamentId, getTournament]); // Remove location dependency to prevent re-renders
+  // Handle start auction
+  // In the handleStartAuction function in Tournament.jsx:
+// Update the handleStartAuction function:
+const handleStartAuction = async () => {
+  try {
+    setIsStartingAuction(true);
+    
+    // Start auction using the auction service
+    const updatedTournament = await startAuction(tournamentId);
+    
+    // Update local state
+    setTournament(updatedTournament);
+    
+    // Show success message
+    toast.success('Auction started successfully!');
+    
+    // Directly navigate to the auction page - important change here:
+    setTimeout(() => {
+      navigate(`/auction/${tournamentId}`, { 
+        state: { 
+          isInitiator: true,
+          isTestMode: isTestMode,
+          _timestamp: Date.now() // Add timestamp to ensure unique state
+        }
+      });
+    }, 1000); // short delay to allow the toast to show
+  } catch (error) {
+    console.error('Error starting auction:', error);
+    toast.error(error.message || 'Failed to start auction');
+  } finally {
+    setIsStartingAuction(false);
+  }
+};
+const refreshTournamentData = async () => {
+  try {
+    if (tournamentId) {
+      // Force a fresh fetch from localStorage
+      const freshTournament = await getTournament(tournamentId, true);
+      console.log('Tournament data refreshed:', freshTournament);
+      
+      // Update state
+      setTournament(freshTournament);
+    }
+  } catch (error) {
+    console.error('Error refreshing tournament data:', error);
+  }
+};
+  
   // Handle loading state
   if (isLoading) {
-    return <Loader />;
+    return <Loader key="tournament-loader" />;
   }
   
   // Handle error state
   if (!tournament) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <motion.div 
+        key="tournament-not-found"
+        className="min-h-screen flex items-center justify-center"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+      >
         <Card variant="glass" className="p-8 max-w-md text-center">
           <h2 className="text-2xl font-bold text-white mb-4">Tournament Not Found</h2>
           <p className="text-blue-300 mb-6">We couldn't find the tournament you're looking for.</p>
@@ -78,12 +133,121 @@ const Tournament = () => {
             <Button variant="primary">Go to Home</Button>
           </Link>
         </Card>
-      </div>
+      </motion.div>
     );
   }
   
+  // Create arrays for buttons with keys
+  const headerActions = [];
+  
+  if (tournament.status === 'pre-auction' && isCreator) {
+    headerActions.push(
+     // Find your Start Auction button and update it:
+<Button 
+  key="header-start-auction"
+  variant="primary"
+  onClick={handleStartAuction}
+  loading={isStartingAuction}
+> 
+  {isStartingAuction ? 'Starting...' : 'Start Auction'}
+</Button>
+    );
+  }
+  
+  if (tournament.status === 'auction') {
+    headerActions.push(
+      <Link key="header-join-auction" to={`/auction/${tournamentId}`}>
+        <Button variant="primary">
+          Join Auction
+        </Button>
+      </Link>
+    );
+  }
+  
+  if (tournament.status !== 'pre-auction') {
+    headerActions.push(
+      <Link key="header-dashboard" to={`/dashboard/${tournamentId}`}>
+        <Button variant="glass">
+          Dashboard
+        </Button>
+      </Link>
+    );
+  }
+  
+  // Create sidebar action buttons with keys
+  const sidebarActions = [];
+  
+  if (tournament.status === 'pre-auction' && isCreator) {
+    sidebarActions.push(
+      <Button
+        key="sidebar-start-auction"
+        variant="primary"
+        fullWidth
+        onClick={handleStartAuction}
+      >
+        Start Auction
+      </Button>
+    );
+  }
+  
+  if (tournament.status === 'auction') {
+    sidebarActions.push(
+      <Link key="sidebar-join-auction" to={`/auction/${tournamentId}`} className="block">
+        <Button variant="primary" fullWidth>
+          Join Auction
+        </Button>
+      </Link>
+    );
+  }
+  
+  if (tournament.status === 'post-auction') {
+    sidebarActions.push(
+      <Link key="sidebar-match-center" to={`/matches/${tournamentId}`} className="block">
+        <Button variant="primary" fullWidth>
+          Match Center
+        </Button>
+      </Link>
+    );
+  }
+  
+  if (tournament.status !== 'pre-auction') {
+    sidebarActions.push(
+      <Link key="sidebar-tournament-dashboard" to={`/dashboard/${tournamentId}`} className="block">
+        <Button variant="secondary" fullWidth>
+          Tournament Dashboard
+        </Button>
+      </Link>
+    );
+  }
+  
+  if (isCreator) {
+    sidebarActions.push(
+      <Button
+        key="sidebar-access-codes"
+        variant="glass"
+        fullWidth
+        onClick={() => setShowCodes(true)}
+      >
+        View Access Codes
+      </Button>
+    );
+  }
+  
+  sidebarActions.push(
+    <Link key="sidebar-home" to="/" className="block">
+      <Button variant="glass" fullWidth>
+        Back to Home
+      </Button>
+    </Link>
+  );
+  
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-900 via-indigo-900 to-purple-900 p-4">
+    <motion.div
+      key={`tournament-${tournamentId}`}
+      className="min-h-screen bg-gradient-to-br from-blue-900 via-indigo-900 to-purple-900 p-4"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+    >
       <div className="container mx-auto max-w-7xl">
         {/* Header */}
         <div className="mb-8">
@@ -94,31 +258,10 @@ const Tournament = () => {
             </div>
             
             <div className="mt-4 md:mt-0 space-x-2">
-              {tournament.status === 'pre-auction' && isCreator && (
-                <Button 
-                  variant="primary"
-                  onClick={handleStartAuction}
-                >
-                  Start Auction
-                </Button>
-              )}
-              
-              {tournament.status === 'auction' && (
-                <Link to={`/auction/${tournamentId}`}>
-                  <Button variant="primary">
-                    Join Auction
-                  </Button>
-                </Link>
-              )}
-              
-              {tournament.status !== 'pre-auction' && (
-                <Link to={`/dashboard/${tournamentId}`}>
-                  <Button variant="glass">
-                    Dashboard
-                  </Button>
-                </Link>
-              )}
-            </div>
+  {headerActions.map((action, index) => (
+    <span key={`header-action-${index}`}>{action}</span>
+  ))}
+</div>
           </div>
         </div>
         
@@ -224,6 +367,20 @@ const Tournament = () => {
                       </Button>
                     </div>
                   )}
+
+{isCreator && (
+  <Button
+    variant="glass"
+    onClick={refreshTournamentData}
+    className="ml-2"
+    icon={
+      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+        <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
+      </svg>
+    }
+  >
+    Refresh
+  </Button> )}
                 </div>
                 
                 {/* Tournament Details */}
@@ -246,6 +403,56 @@ const Tournament = () => {
                     </div>
                   </div>
                 </div>
+               
+
+
+                // Add this right after rendering the tournament details, before showing teams
+{process.env.NODE_ENV === 'development' && isCreator && tournament.status === 'pre-auction' && (
+  <div className="bg-red-900 bg-opacity-40 p-4 rounded-lg border border-red-800 mb-6">
+    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between">
+      <div className="mb-3 sm:mb-0">
+        <h3 className="text-lg font-semibold text-white mb-1">Development Test Mode</h3>
+        <p className="text-sm text-red-300">Skip captain validation for testing purposes</p>
+      </div>
+      <div className="flex items-center">
+        <button 
+          onClick={() => setIsTestMode(!isTestMode)}
+          className={`px-4 py-2 rounded text-white transition-colors ${isTestMode ? 'bg-red-600 hover:bg-red-700' : 'bg-slate-700 hover:bg-slate-600'}`}
+        >
+          {isTestMode ? 'Test Mode: ON' : 'Test Mode: OFF'}
+        </button>
+      </div>
+    </div>
+    
+    {isTestMode && (
+      <div className="mt-4">
+        <p className="text-sm text-white mb-2">With test mode enabled, you can start the auction without waiting for team captains to join.</p>
+        <button
+          onClick={() => handleStartAuction()}
+          disabled={isStartingAuction}
+          className="w-full bg-green-600 hover:bg-green-500 text-white py-2 rounded flex items-center justify-center"
+        >
+          {isStartingAuction ? (
+            <>
+              <svg className="animate-spin h-5 w-5 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              Starting Auction...
+            </>
+          ) : (
+            <>
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
+              </svg>
+              Start Auction (Test Mode)
+            </>
+          )}
+        </button>
+      </div>
+    )}
+  </div>
+)}
                 
                 {/* Teams */}
                 <div>
@@ -253,7 +460,7 @@ const Tournament = () => {
                   <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
                     {tournament.teams.map(team => (
                       <motion.div
-                        key={team.id}
+                        key={team.id || `team-${team.name}`}
                         className="bg-blue-900 bg-opacity-40 p-3 rounded-lg"
                         whileHover={{ scale: 1.03 }}
                         transition={{ type: 'spring', stiffness: 300 }}
@@ -298,56 +505,10 @@ const Tournament = () => {
               <h3 className="text-lg font-bold text-white mb-4">Actions</h3>
               
               <div className="space-y-3">
-                {tournament.status === 'pre-auction' && isCreator && (
-                  <Button
-                    variant="primary"
-                    fullWidth
-                    onClick={handleStartAuction}
-                  >
-                    Start Auction
-                  </Button>
-                )}
-                
-                {tournament.status === 'auction' && (
-                  <Link to={`/auction/${tournamentId}`} className="block">
-                    <Button variant="primary" fullWidth>
-                      Join Auction
-                    </Button>
-                  </Link>
-                )}
-                
-                {tournament.status === 'post-auction' && (
-                  <Link to={`/matches/${tournamentId}`} className="block">
-                    <Button variant="primary" fullWidth>
-                      Match Center
-                    </Button>
-                  </Link>
-                )}
-                
-                {tournament.status !== 'pre-auction' && (
-                  <Link to={`/dashboard/${tournamentId}`} className="block">
-                    <Button variant="secondary" fullWidth>
-                      Tournament Dashboard
-                    </Button>
-                  </Link>
-                )}
-                
-                {isCreator && (
-                  <Button
-                    variant="glass"
-                    fullWidth
-                    onClick={() => setShowCodes(true)}
-                  >
-                    View Access Codes
-                  </Button>
-                )}
-                
-                <Link to="/" className="block">
-                  <Button variant="glass" fullWidth>
-                    Back to Home
-                  </Button>
-                </Link>
-              </div>
+  {sidebarActions.map((action, index) => (
+    <div key={`sidebar-action-${index}`}>{action}</div>
+  ))}
+</div>
             </Card>
             
             {/* Next Steps */}
@@ -355,95 +516,112 @@ const Tournament = () => {
               <h3 className="text-lg font-bold text-white mb-4">Next Steps</h3>
               
               <div className="space-y-3">
-                {tournament.status === 'pre-auction' && (
-                  <>
-                    <div className="flex items-start">
-                      <div className="bg-blue-800 p-1 rounded-full mr-2 mt-1">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-blue-300" viewBox="0 0 20 20" fill="currentColor">
-                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                        </svg>
+                <AnimatePresence mode="wait">
+                  {tournament.status === 'pre-auction' && (
+                    <motion.div 
+                      key="pre-auction-steps"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                    >
+                      <div className="flex items-start mb-3">
+                        <div className="bg-blue-800 p-1 rounded-full mr-2 mt-1">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-blue-300" viewBox="0 0 20 20" fill="currentColor">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                          </svg>
+                        </div>
+                        <div>
+                          <p className="text-white font-medium">Share Access Codes</p>
+                          <p className="text-sm text-blue-300">Distribute the captain and viewer codes to participants.</p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-white font-medium">Share Access Codes</p>
-                        <p className="text-sm text-blue-300">Distribute the captain and viewer codes to participants.</p>
+                      
+                      <div className="flex items-start">
+                        <div className="bg-blue-800 p-1 rounded-full mr-2 mt-1">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-blue-300" viewBox="0 0 20 20" fill="currentColor">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z" clipRule="evenodd" />
+                          </svg>
+                        </div>
+                        <div>
+                          <p className="text-white font-medium">Start the Auction</p>
+                          <p className="text-sm text-blue-300">Begin the bidding process once everyone is ready.</p>
+                        </div>
                       </div>
-                    </div>
-                    
-                    <div className="flex items-start">
-                      <div className="bg-blue-800 p-1 rounded-full mr-2 mt-1">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-blue-300" viewBox="0 0 20 20" fill="currentColor">
-                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z" clipRule="evenodd" />
-                        </svg>
+                    </motion.div>
+                  )}
+                  
+                  {tournament.status === 'auction' && (
+                    <motion.div 
+                      key="auction-steps"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                    >
+                      <div className="flex items-start mb-3">
+                        <div className="bg-blue-800 p-1 rounded-full mr-2 mt-1">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-blue-300" viewBox="0 0 20 20" fill="currentColor">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                          </svg>
+                        </div>
+                        <div>
+                          <p className="text-white font-medium">Join the Auction</p>
+                          <p className="text-sm text-blue-300">Participate in the auction to build your team.</p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-white font-medium">Start the Auction</p>
-                        <p className="text-sm text-blue-300">Begin the bidding process once everyone is ready.</p>
+                      
+                      <div className="flex items-start">
+                        <div className="bg-blue-800 p-1 rounded-full mr-2 mt-1">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-blue-300" viewBox="0 0 20 20" fill="currentColor">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z" clipRule="evenodd" />
+                          </svg>
+                        </div>
+                        <div>
+                          <p className="text-white font-medium">Bid for Players</p>
+                          <p className="text-sm text-blue-300">Strategically bid within your budget to acquire players.</p>
+                        </div>
                       </div>
-                    </div>
-                  </>
-                )}
-                
-                {tournament.status === 'auction' && (
-                  <>
-                    <div className="flex items-start">
-                      <div className="bg-blue-800 p-1 rounded-full mr-2 mt-1">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-blue-300" viewBox="0 0 20 20" fill="currentColor">
-                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                        </svg>
+                    </motion.div>
+                  )}
+                  
+                  {tournament.status === 'post-auction' && (
+                    <motion.div 
+                      key="post-auction-steps"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                    >
+                      <div className="flex items-start mb-3">
+                        <div className="bg-blue-800 p-1 rounded-full mr-2 mt-1">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-blue-300" viewBox="0 0 20 20" fill="currentColor">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                          </svg>
+                        </div>
+                        <div>
+                          <p className="text-white font-medium">Create Matches</p>
+                          <p className="text-sm text-blue-300">Schedule matches between teams to start the tournament.</p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-white font-medium">Join the Auction</p>
-                        <p className="text-sm text-blue-300">Participate in the auction to build your team.</p>
+                      
+                      <div className="flex items-start">
+                        <div className="bg-blue-800 p-1 rounded-full mr-2 mt-1">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-blue-300" viewBox="0 0 20 20" fill="currentColor">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z" clipRule="evenodd" />
+                          </svg>
+                        </div>
+                        <div>
+                          <p className="text-white font-medium">Simulate Matches</p>
+                          <p className="text-sm text-blue-300">Run match simulations to determine the winners.</p>
+                        </div>
                       </div>
-                    </div>
-                    
-                    <div className="flex items-start">
-                      <div className="bg-blue-800 p-1 rounded-full mr-2 mt-1">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-blue-300" viewBox="0 0 20 20" fill="currentColor">
-                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z" clipRule="evenodd" />
-                        </svg>
-                      </div>
-                      <div>
-                        <p className="text-white font-medium">Bid for Players</p>
-                        <p className="text-sm text-blue-300">Strategically bid within your budget to acquire players.</p>
-                      </div>
-                    </div>
-                  </>
-                )}
-                
-                {tournament.status === 'post-auction' && (
-                  <>
-                    <div className="flex items-start">
-                      <div className="bg-blue-800 p-1 rounded-full mr-2 mt-1">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-blue-300" viewBox="0 0 20 20" fill="currentColor">
-                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                        </svg>
-                      </div>
-                      <div>
-                        <p className="text-white font-medium">Create Matches</p>
-                        <p className="text-sm text-blue-300">Schedule matches between teams to start the tournament.</p>
-                      </div>
-                    </div>
-                    
-                    <div className="flex items-start">
-                      <div className="bg-blue-800 p-1 rounded-full mr-2 mt-1">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-blue-300" viewBox="0 0 20 20" fill="currentColor">
-                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z" clipRule="evenodd" />
-                        </svg>
-                      </div>
-                      <div>
-                        <p className="text-white font-medium">Simulate Matches</p>
-                        <p className="text-sm text-blue-300">Run match simulations to determine the winners.</p>
-                      </div>
-                    </div>
-                  </>
-                )}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
             </Card>
           </div>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 };
 

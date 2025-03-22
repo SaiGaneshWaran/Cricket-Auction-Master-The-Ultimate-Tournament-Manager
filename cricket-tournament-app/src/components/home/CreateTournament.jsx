@@ -17,8 +17,9 @@ const steps = [
 
 const CreateTournament = ({ onBack }) => {
   const navigate = useNavigate();
-  const { createTournament } = useTournament();
+  const { createTournament, getTournament } = useTournament();
   const [currentStep, setCurrentStep] = useState(0);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [tournamentData, setTournamentData] = useState({
     name: '',
     numTeams: 6,
@@ -31,20 +32,54 @@ const CreateTournament = ({ onBack }) => {
       wicketKeepers: 10
     }
   });
+  const [importCode, setImportCode] = useState('');
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    setTournamentData(prev => ({
-      ...prev,
-      [name]: value
-    }));
+    
+    // If changing team budget, also update all team budgets
+    if (name === 'teamBudget') {
+      const newBudget = parseFloat(value);
+      
+      // Update each team's budget if teams exist
+      if (tournamentData.teams.length > 0) {
+        const updatedTeams = tournamentData.teams.map(team => ({
+          ...team,
+          budget: newBudget
+        }));
+        
+        setTournamentData(prev => ({
+          ...prev,
+          [name]: newBudget,
+          teams: updatedTeams
+        }));
+      } else {
+        setTournamentData(prev => ({
+          ...prev,
+          [name]: newBudget
+        }));
+      }
+    } else {
+      setTournamentData(prev => ({
+        ...prev,
+        [name]: value
+      }));
+    }
   };
 
   const handleTeamsUpdate = (teams) => {
+    // Ensure each team has the correct budget set
+    const updatedTeams = teams.map(team => ({
+      ...team,
+      budget: parseFloat(tournamentData.teamBudget)
+    }));
+    
     setTournamentData(prev => ({
       ...prev,
-      teams
+      teams: updatedTeams
     }));
+    
+    console.log('Updated teams with budget:', updatedTeams);
   };
 
   const handlePlayerPoolUpdate = (playerPool) => {
@@ -65,37 +100,197 @@ const CreateTournament = ({ onBack }) => {
       return;
     }
     
+    // If moving to the team setup step, pre-initialize teams with budget
+    if (currentStep === 0 && tournamentData.teams.length === 0) {
+      // Pre-initialize teams with the budget
+      const numTeams = parseInt(tournamentData.numTeams);
+      const preInitializedTeams = Array(numTeams).fill(null).map((_, index) => ({
+        id: `team-${Date.now()}-${index}`,
+        name: `Team ${index + 1}`,
+        color: '#1e88e5', // Default blue color
+        budget: parseFloat(tournamentData.teamBudget)
+      }));
+      
+      setTournamentData(prev => ({
+        ...prev,
+        teams: preInitializedTeams
+      }));
+    }
+    
     setCurrentStep(prev => prev + 1);
   };
 
   const handleBack = () => {
     if (currentStep === 0) {
-      onBack();
+      onBack && onBack();
     } else {
       setCurrentStep(prev => prev - 1);
     }
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
+    // Prevent multiple submissions
+    if (isSubmitting) return;
+    
     try {
-      const { tournamentId, captainCode, viewerCode } = createTournament(tournamentData);
+      setIsSubmitting(true);
       
-      // Show success message with codes
-      toast.success('Tournament created successfully!');
+      // Final validation
+      if (!tournamentData.name) {
+        toast.error('Tournament name is required');
+        setIsSubmitting(false);
+        return;
+      }
       
-      // Navigate to tournament page
+      if (tournamentData.teams.length !== parseInt(tournamentData.numTeams)) {
+        toast.error('Please configure all teams');
+        setIsSubmitting(false);
+        return;
+      }
+      
+      // Final check to ensure all teams have budgets
+      const teamsWithBudgets = tournamentData.teams.map(team => {
+        if (!team.budget) {
+          return {
+            ...team,
+            budget: parseFloat(tournamentData.teamBudget)
+          };
+        }
+        return team;
+      });
+      
+      const finalData = {
+        ...tournamentData,
+        teams: teamsWithBudgets
+      };
+      
+      console.log('Creating tournament with data:', JSON.stringify(finalData));
+      
+      // Create tournament
+      const result = await createTournament(finalData);
+      
+      console.log('Tournament creation result:', result);
+      
+      if (!result || !result.tournamentId) {
+        throw new Error('Failed to create tournament: Invalid response');
+      }
+      
+      const { tournamentId, captainCode, viewerCode } = result;
+      
+      // Get full tournament data for export
+      const tournament = await getTournament(tournamentId);
+      
+      // Generate export code for sharing across ports
+      const exportCode = btoa(JSON.stringify(tournament));
+      
+      // Store in sessionStorage for easy access later
+      sessionStorage.setItem('lastCreatedTournament', exportCode);
+      
+      // Show success message with codes and export button
+      toast.success(
+        <div>
+          Tournament created successfully!<br />
+          Captain Code: <strong>{captainCode}</strong><br />
+          Viewer Code: <strong>{viewerCode}</strong><br />
+          <button 
+            onClick={() => {
+              navigator.clipboard.writeText(exportCode);
+              toast.info('Tournament code copied to clipboard! Use the DevTools on another port to import it.');
+            }}
+            className="mt-2 px-3 py-1 bg-blue-700 hover:bg-blue-600 text-white rounded text-sm w-full"
+          >
+            Copy Tournament Code for Import
+          </button>
+        </div>, 
+        { autoClose: false }
+      );
+      
+      // Navigate to tournament page with replace
       navigate(`/tournament/${tournamentId}`, { 
         state: { 
           captainCode, 
           viewerCode,
-          isCreator: true
-        } 
+          isCreator: true,
+          exportCode, // Include export code in navigation state
+          _timestamp: Date.now() // Add timestamp to ensure unique state
+        },
+        replace: true
       });
     } catch (error) {
-      toast.error('Failed to create tournament: ' + error.message);
+      console.error('Tournament creation error:', error);
+      toast.error(`Failed to create tournament: ${error.message || 'Unknown error'}`);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
+  // Complete handleImport function
+  const handleImport = () => {
+    try {
+      // Validate input
+      if (!importCode.trim()) {
+        toast.error('Please paste a tournament code first');
+        return;
+      }
+      
+      // Decode from base64
+      let tournamentData;
+      try {
+        tournamentData = JSON.parse(atob(importCode.trim()));
+      } catch (e) {
+        toast.error('Invalid tournament code format');
+        return;
+      }
+      
+      // Validate basic structure
+      if (!tournamentData.id || !tournamentData.name) {
+        toast.error('Invalid tournament data structure');
+        return;
+      }
+      
+      // Get existing tournaments from localStorage
+      const storageKey = 'cricket_tournaments';
+      let storedItem = localStorage.getItem(storageKey);
+      let existingData = {};
+      
+      if (storedItem) {
+        try {
+          const storageObj = JSON.parse(storedItem);
+          existingData = storageObj.data || {};
+        } catch (e) {
+          console.error('Error parsing existing tournaments', e);
+        }
+      }
+      
+      // Check if tournament already exists
+      if (existingData[tournamentData.id]) {
+        toast.info(`Tournament "${tournamentData.name}" already exists`);
+        return;
+      }
+      
+      // Add new tournament
+      existingData[tournamentData.id] = tournamentData;
+      
+      // Save back to localStorage
+      const saveObject = {
+        data: existingData,
+        timestamp: Date.now()
+      };
+      
+      localStorage.setItem(storageKey, JSON.stringify(saveObject));
+      
+      // Clear input and show success
+      setImportCode('');
+      toast.success(`Tournament "${tournamentData.name}" imported successfully!`);
+      
+      // Reload to update state
+      setTimeout(() => window.location.reload(), 1500);
+    } catch (error) {
+      console.error('Import error:', error);
+      toast.error('Failed to import tournament: ' + (error.message || 'Unknown error'));
+    }
+  };
+  
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -202,7 +397,7 @@ const CreateTournament = ({ onBack }) => {
                     type="range"
                     name="teamBudget"
                     min="10"
-                    max="20"
+                    max="80"
                     step="0.5"
                     value={tournamentData.teamBudget}
                     onChange={handleInputChange}
@@ -220,6 +415,7 @@ const CreateTournament = ({ onBack }) => {
             numTeams={parseInt(tournamentData.numTeams)}
             teams={tournamentData.teams}
             onTeamsUpdate={handleTeamsUpdate}
+            teamBudget={tournamentData.teamBudget} // Pass the team budget to TeamConfig
           />
         )}
         
@@ -287,6 +483,7 @@ const CreateTournament = ({ onBack }) => {
                       style={{ backgroundColor: team.color }}
                     ></div>
                     <p className="text-white font-semibold">{team.name}</p>
+                    <p className="text-gray-400 text-xs mt-1">Budget: {team.budget} Cr</p>
                   </div>
                 ))}
               </div>
@@ -320,14 +517,22 @@ const CreateTournament = ({ onBack }) => {
           <Button
             variant="success"
             onClick={handleSubmit}
+            disabled={isSubmitting}
             icon={
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-              </svg>
+              isSubmitting ? (
+                <svg className="animate-spin h-5 w-5 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+              ) : (
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                </svg>
+              )
             }
             iconPosition="right"
           >
-            Create Tournament
+            {isSubmitting ? 'Creating...' : 'Create Tournament'}
           </Button>
         )}
       </div>

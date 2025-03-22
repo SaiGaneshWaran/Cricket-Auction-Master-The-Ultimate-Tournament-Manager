@@ -1,146 +1,246 @@
-import { motion } from 'framer-motion';
-import { formatCurrency } from '../../utils/helpers';
-import Card from '../common/Card';
+import React from 'react';
+import { 
+  Card, 
+  CardContent, 
+  Typography, 
+  Box, 
+  Divider, 
+  LinearProgress, 
+  Grid, 
+  Tooltip,
+  Avatar,
+  Paper
+} from '@mui/material';
+import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
 
-const TeamBalanceCard = ({ team, teamBalance }) => {
-  if (!team || !teamBalance) return null;
+// Convert crores to actual amount (1 crore = 10,000,000)
+const croreToAmount = (crores) => {
+  if (typeof crores === 'number') {
+    return crores * 10000000;
+  }
+  return 0;
+};
+
+// Format currency with proper null checking
+const formatCurrency = (amount) => {
+  if (amount === undefined || amount === null) {
+    return '₹0';
+  }
+  return `₹${amount.toLocaleString()}`;
+};
+
+// Single team balance card
+const TeamBalanceItem = ({ team, balance, isHighlighted }) => {
+  if (!team) return null;
   
-  // Calculate remaining percentage
-  const remainingPercentage = (teamBalance.remaining / teamBalance.totalBudget) * 100;
+  const teamName = team?.name || 'Unknown Team';
+  const teamColor = team?.color || '#6366f1';
   
-  // Function to get player role summary
-  const getPlayerRoleSummary = () => {
-    const roleCounts = {
-      batsman: 0,
-      bowler: 0,
-      allRounder: 0,
-      wicketKeeper: 0
-    };
-    
-    teamBalance.players.forEach(player => {
-      if (roleCounts[player.role] !== undefined) {
-        roleCounts[player.role]++;
-      }
-    });
-    
-    return roleCounts;
+  // Ensure we have a proper budget - convert from crores if needed
+  const teamBudgetInCrores = team?.budget || 0;
+  const teamBudget = teamBudgetInCrores > 100 ? teamBudgetInCrores : croreToAmount(teamBudgetInCrores);
+  
+  // Get budget values, ensuring we use actual numbers not crores
+  const totalBudget = balance?.total || teamBudget;
+  const spent = balance?.spent || 0;
+  const remaining = balance?.remaining || teamBudget;
+  
+  // Calculate percentage remaining
+  const percentRemaining = totalBudget > 0 ? (remaining / totalBudget) * 100 : 0;
+  const percentSpent = totalBudget > 0 ? (spent / totalBudget) * 100 : 0;
+  
+  // Determine status color based on percentage remaining
+  const getStatusColor = () => {
+    if (percentRemaining <= 10) return 'error.main';
+    if (percentRemaining <= 25) return 'warning.main';
+    if (percentRemaining <= 50) return 'info.main';
+    return 'success.main';
   };
   
-  const roleCounts = getPlayerRoleSummary();
+  return (
+    <Paper
+      elevation={isHighlighted ? 3 : 1}
+      sx={{
+        borderRadius: 2,
+        border: isHighlighted ? `2px solid ${teamColor}` : '1px solid rgba(0,0,0,0.08)',
+        overflow: 'hidden',
+        transition: 'all 0.3s ease',
+        position: 'relative',
+        '&:hover': {
+          transform: 'translateY(-2px)',
+          boxShadow: 3
+        }
+      }}
+    >
+      <Box sx={{ 
+        p: 1.5, 
+        bgcolor: isHighlighted ? `${teamColor}` : 'transparent',
+        borderBottom: !isHighlighted ? `2px solid ${teamColor}` : 'none'
+      }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Avatar
+              sx={{ 
+                width: 24, 
+                height: 24, 
+                bgcolor: isHighlighted ? '#fff' : teamColor,
+                color: isHighlighted ? teamColor : '#fff',
+                fontSize: '0.75rem',
+                fontWeight: 'bold'
+              }}
+            >
+              {teamName.charAt(0)}
+            </Avatar>
+          
+            <Typography 
+              variant="body1" 
+              fontWeight="bold"
+              sx={{ color: isHighlighted ? '#fff' : 'text.primary' }}
+            >
+              {teamName}
+            </Typography>
+          </Box>
+          
+          <Tooltip title="Remaining Budget" arrow placement="top">
+            <Typography 
+              variant="body1" 
+              fontWeight="bold"
+              sx={{ 
+                color: isHighlighted ? '#fff' : getStatusColor(),
+              }}
+            >
+              {formatCurrency(remaining)}
+            </Typography>
+          </Tooltip>
+        </Box>
+      </Box>
+      
+      <Box sx={{ p: 1.5 }}>
+        {/* Progress bar showing percentage spent vs remaining */}
+        <Box sx={{ width: '100%', mb: 0.5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
+            <Box sx={{ flexGrow: 1 }}>
+              <Typography variant="caption" color="text.secondary">
+                Budget Status
+              </Typography>
+            </Box>
+            <Typography variant="caption" color="text.secondary">
+              {percentRemaining.toFixed(0)}% remaining
+            </Typography>
+          </Box>
+          
+          <Box sx={{ 
+            height: 8, 
+            borderRadius: 4, 
+            bgcolor: 'rgba(0,0,0,0.05)', 
+            overflow: 'hidden',
+            display: 'flex'
+          }}>
+            {/* Spent portion */}
+            <Box 
+              sx={{ 
+                width: `${percentSpent}%`, 
+                bgcolor: teamColor,
+                transition: 'width 1s ease-in-out'
+              }} 
+            />
+            {/* Remaining portion */}
+            <Box 
+              sx={{ 
+                width: `${percentRemaining}%`, 
+                bgcolor: 'transparent',
+                transition: 'width 1s ease-in-out'
+              }} 
+            />
+          </Box>
+        </Box>
+        
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1 }}>
+          <Box>
+            <Typography variant="caption" color="text.secondary">
+              Spent
+            </Typography>
+            <Typography variant="body2" fontWeight="medium">
+              {formatCurrency(spent)}
+            </Typography>
+          </Box>
+          
+          <Box sx={{ textAlign: 'right' }}>
+            <Typography variant="caption" color="text.secondary">
+              Total
+            </Typography>
+            <Typography variant="body2" fontWeight="medium">
+              {formatCurrency(totalBudget)}
+            </Typography>
+          </Box>
+        </Box>
+      </Box>
+    </Paper>
+  );
+};
+
+// Team balances grid
+const TeamBalances = ({ teams = [], balances = {}, highlightTeamId = null }) => {
+  if (!teams || teams.length === 0) {
+    return (
+      <Card sx={{ borderRadius: 2, overflow: 'hidden' }}>
+        <CardContent>
+          <Typography variant="subtitle1" gutterBottom>
+            Team Budgets
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            No teams available
+          </Typography>
+        </CardContent>
+      </Card>
+    );
+  }
   
   return (
-    <Card variant="primary" className="overflow-hidden">
-      <div className="p-4 flex items-center justify-between border-b border-blue-800">
-        <div className="flex items-center space-x-3">
-          <div 
-            className="w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold text-white"
-            style={{ backgroundColor: team.color }}
-          >
-            {team.name.charAt(0)}
-          </div>
-          <div>
-            <h3 className="text-lg font-bold text-white">{team.name}</h3>
-            <p className="text-sm text-blue-300">Your Team</p>
-          </div>
-        </div>
-        
-        <div className="text-right">
-          <p className="text-sm text-blue-300">Total Budget</p>
-          <p className="text-lg font-bold text-white">{formatCurrency(teamBalance.totalBudget)}</p>
-        </div>
-      </div>
+    <Card sx={{ borderRadius: 2, overflow: 'hidden' }}>
+      <Box sx={{ 
+        p: 2, 
+        bgcolor: 'primary.main', 
+        color: '#fff',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 1
+      }}>
+        <AccountBalanceWalletIcon />
+        <Typography variant="h6" fontWeight="medium">
+          Team Budgets
+        </Typography>
+      </Box>
       
-      <div className="p-4">
-        <div className="flex justify-between items-center mb-2">
-          <p className="text-sm text-blue-300">Remaining</p>
-          <p className="text-lg font-bold text-white">{formatCurrency(teamBalance.remaining)}</p>
-        </div>
-        
-        <div className="relative h-4 bg-blue-900 rounded-full overflow-hidden mb-4">
-          <motion.div 
-            className="absolute top-0 left-0 h-full rounded-full bg-gradient-to-r from-green-500 to-blue-500"
-            initial={{ width: '100%' }}
-            animate={{ width: `${remainingPercentage}%` }}
-            transition={{ duration: 0.5 }}
-          />
-        </div>
-        
-        <div className="flex justify-between items-center mb-4">
-          <p className="text-sm text-blue-300">Spent</p>
-          <p className="text-white font-medium">{formatCurrency(teamBalance.spent)}</p>
-        </div>
-        
-        <div className="mb-4">
-          <h4 className="text-sm font-medium text-blue-300 mb-2">Team Composition</h4>
-          <div className="grid grid-cols-4 gap-2">
-            <div className="bg-blue-900 bg-opacity-40 rounded-lg p-2 text-center">
-              <p className="text-xs text-blue-300">BAT</p>
-              <p className="text-lg font-bold text-white">{roleCounts.batsman}</p>
-            </div>
-            <div className="bg-blue-900 bg-opacity-40 rounded-lg p-2 text-center">
-              <p className="text-xs text-blue-300">BOWL</p>
-              <p className="text-lg font-bold text-white">{roleCounts.bowler}</p>
-            </div>
-            <div className="bg-blue-900 bg-opacity-40 rounded-lg p-2 text-center">
-              <p className="text-xs text-blue-300">ALL</p>
-              <p className="text-lg font-bold text-white">{roleCounts.allRounder}</p>
-            </div>
-            <div className="bg-blue-900 bg-opacity-40 rounded-lg p-2 text-center">
-              <p className="text-xs text-blue-300">WK</p>
-              <p className="text-lg font-bold text-white">{roleCounts.wicketKeeper}</p>
-            </div>
-          </div>
-        </div>
-        
-        <div>
-          <h4 className="text-sm font-medium text-blue-300 mb-2">Acquired Players ({teamBalance.players.length})</h4>
-          <div className="space-y-2 max-h-40 overflow-y-auto pr-2">
-            {teamBalance.players.map(player => (
-              <div 
-                key={player.id}
-                className="flex items-center justify-between bg-blue-900 bg-opacity-30 p-2 rounded-lg"
-              >
-                <div className="flex items-center space-x-2">
-                  <div 
-                    className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold bg-indigo-700 text-white"
-                  >
-                    {player.name.charAt(0)}
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-white">{player.name}</p>
-                    <p className="text-xs text-blue-300">{formatRole(player.role)}</p>
-                  </div>
-                </div>
-                <p className="text-sm font-medium text-white">{formatCurrency(player.soldPrice)}</p>
-              </div>
-            ))}
+      <CardContent sx={{ p: 2 }}>
+        <Grid container spacing={1.5}>
+          {Array.isArray(teams) && teams.map((team) => {
+            if (!team || !team.id) return null;
             
-            {teamBalance.players.length === 0 && (
-              <div className="text-center py-4 text-blue-300 text-sm">
-                No players acquired yet
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
+            // Create a fallback balance object with proper budget conversion
+            const teamBudgetInCrores = team?.budget || 0;
+            const teamBudget = teamBudgetInCrores > 100 ? teamBudgetInCrores : croreToAmount(teamBudgetInCrores);
+            
+            const balance = balances[team.id] || { 
+              total: teamBudget, 
+              spent: 0, 
+              remaining: teamBudget 
+            };
+            
+            return (
+              <Grid item xs={12} key={team.id}>
+                <TeamBalanceItem 
+                  team={team} 
+                  balance={balance}
+                  isHighlighted={team.id === highlightTeamId}
+                />
+              </Grid>
+            );
+          })}
+        </Grid>
+      </CardContent>
     </Card>
   );
 };
 
-// Helper function to format role
-const formatRole = (role) => {
-  switch (role) {
-    case 'batsman':
-      return 'Batsman';
-    case 'bowler':
-      return 'Bowler';
-    case 'allRounder':
-      return 'All-Rounder';
-    case 'wicketKeeper':
-      return 'Wicket-Keeper';
-    default:
-      return role;
-  }
-};
-
-export default TeamBalanceCard;
+export default TeamBalances;

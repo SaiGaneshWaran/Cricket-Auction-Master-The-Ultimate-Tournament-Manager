@@ -1,739 +1,1386 @@
-import { generateUniqueId, getRandomElement } from '../utils/helpers';
+// src/services/tournamentService.js
+import { v4 as uuidv4 } from 'uuid';
+import { getFromStorage, saveToStorage, removeFromStorage } from '../utils/storage.js';
+import { 
+  generatePlayerPool, 
+  generateTournamentSchedule, 
+  updateTournamentSchedule, 
+  generatePlayerPerformance 
+} from '../utils/playerGenerator.js';
+import { generateAccessCode, generateTeamColor } from '../utils/helpers.js';
+import { initializeAuction, getAuctionById } from './auctionService.js';
 
-// Sample first names for player generation
-const firstNames = [
-  "Virat", "Rohit", "MS", "Ravindra", "Jasprit", "KL", "Hardik", "Rishabh", "Shikhar", "Ajinkya",
-  "Cheteshwar", "Suresh", "Ravichandran", "Yuzvendra", "Mohammed", "Bhuvneshwar", "Ishant", "Kuldeep",
-  "Shardul", "Washington", "Mayank", "Prithvi", "Shreyas", "Rahul", "Krunal", "Deepak", "Navdeep",
-  "Umesh", "Dinesh", "Manish", "Kedar", "Ambati", "Varun", "Sanju", "Ishan", "Suryakumar", "Axar",
-  "Jayant", "Prasidh", "Avesh", "Arshdeep", "Ravi", "Harshal", "Venkatesh", "Ruturaj", "Devdutt",
-  "Nitish", "Mohammed", "Shubman", "Hanuma", "Abhimanyu"
-];
-
-// Sample last names for player generation
-const lastNames = [
-  "Kohli", "Sharma", "Dhoni", "Jadeja", "Bumrah", "Rahul", "Pandya", "Pant", "Dhawan", "Rahane",
-  "Pujara", "Raina", "Ashwin", "Chahal", "Shami", "Kumar", "Sharma", "Yadav", "Thakur", "Sundar",
-  "Agarwal", "Shaw", "Iyer", "Chahar", "Pandya", "Chahar", "Saini", "Yadav", "Karthik", "Pandey",
-  "Jadhav", "Rayudu", "Chakravarthy", "Samson", "Kishan", "Yadav", "Patel", "Yadav", "Krishna",
-  "Khan", "Singh", "Bishnoi", "Patel", "Iyer", "Gaikwad", "Padikkal", "Rana", "Siraj", "Gill",
-  "Vihari", "Easwaran"
-];
-
-// Player roles
-const playerRoles = ["batsman", "bowler", "allRounder", "wicketKeeper"];
-
-// Player skill levels for batting and bowling
-const skillLevels = ["beginner", "intermediate", "advanced", "expert", "world-class"];
-
-// Batting styles
-const battingStyles = ["Right-handed", "Left-handed"];
-
-// Bowling styles
-const bowlingStyles = [
-  "Right-arm fast", "Right-arm medium", "Right-arm off-break", "Right-arm leg-break",
-  "Left-arm fast", "Left-arm medium", "Left-arm orthodox", "Left-arm chinaman"
-];
-
-// Sample venues for matches
-const venues = [
-  "Eden Gardens", "Wankhede Stadium", "M. Chinnaswamy Stadium", "Feroz Shah Kotla",
-  "MA Chidambaram Stadium", "Punjab Cricket Association Stadium", "Rajiv Gandhi International Stadium",
-  "Narendra Modi Stadium", "Holkar Cricket Stadium", "Sawai Mansingh Stadium", "DY Patil Stadium",
-  "JSCA International Stadium", "Brabourne Stadium", "Green Park Stadium", "MCA Stadium"
-];
-
-// Generate a random player
-const generatePlayer = (role, basePrice) => {
-  const firstName = getRandomElement(firstNames);
-  const lastName = getRandomElement(lastNames);
-  const name = `${firstName} ${lastName}`;
-  
-  // Adjust skill level based on base price
-  const skillIndex = Math.min(
-    Math.floor(basePrice / 1.5),
-    skillLevels.length - 1
-  );
-  
-  const battingSkill = role === "bowler" 
-    ? skillLevels[Math.max(0, skillIndex - 2)] 
-    : skillLevels[skillIndex];
-  
-  const bowlingSkill = role === "batsman" || role === "wicketKeeper" 
-    ? skillLevels[Math.max(0, skillIndex - 2)] 
-    : skillLevels[skillIndex];
-  
-  // Generate player stats based on role and skill
-  const battingAverage = generateBattingAverage(role, battingSkill);
-  const battingStrikeRate = generateBattingStrikeRate(role, battingSkill);
-  const bowlingAverage = generateBowlingAverage(role, bowlingSkill);
-  const economyRate = generateEconomyRate(role, bowlingSkill);
-  
-  return {
-    id: generateUniqueId(),
-    name,
-    role,
-    basePrice,
-    team: null, // Will be assigned during auction
-    soldPrice: 0, // Will be set when sold
-    battingStyle: getRandomElement(battingStyles),
-    bowlingStyle: role === "batsman" || role === "wicketKeeper" 
-      ? null 
-      : getRandomElement(bowlingStyles),
-    stats: {
-      matches: generateRandomValue(10, 150),
-      runs: generateRandomValue(100, 5000),
-      battingAverage,
-      highestScore: generateRandomValue(30, 150),
-      battingStrikeRate,
-      fifties: generateRandomValue(0, 20),
-      hundreds: generateRandomValue(0, 10),
-      wickets: role === "batsman" || role === "wicketKeeper" ? 0 : generateRandomValue(10, 200),
-      bowlingAverage,
-      economyRate,
-      bestBowling: role === "batsman" || role === "wicketKeeper" ? "0/0" : generateBestBowling()
-    }
-  };
-};
-
-// Helper function to generate a random value in a range
-const generateRandomValue = (min, max) => {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
-};
-
-// Generate batting average based on role and skill
-const generateBattingAverage = (role, skill) => {
-  let baseAverage;
-  
-  switch (role) {
-    case "batsman":
-      baseAverage = 40;
-      break;
-    case "allRounder":
-      baseAverage = 30;
-      break;
-    case "wicketKeeper":
-      baseAverage = 35;
-      break;
-    case "bowler":
-      baseAverage = 15;
-      break;
-    default:
-      baseAverage = 25;
-  }
-  
-  // Adjust based on skill
-  const skillMultiplier = {
-    "beginner": 0.7,
-    "intermediate": 0.85,
-    "advanced": 1,
-    "expert": 1.15,
-    "world-class": 1.3
-  };
-  
-  const average = baseAverage * skillMultiplier[skill];
-  
-  // Add some randomness
-  return +(average + (Math.random() * 10 - 5)).toFixed(2);
-};
-
-// Generate batting strike rate based on role and skill
-const generateBattingStrikeRate = (role, skill) => {
-  let baseStrikeRate;
-  
-  switch (role) {
-    case "batsman":
-      baseStrikeRate = 130;
-      break;
-    case "allRounder":
-      baseStrikeRate = 120;
-      break;
-    case "wicketKeeper":
-      baseStrikeRate = 125;
-      break;
-    case "bowler":
-      baseStrikeRate = 100;
-      break;
-    default:
-      baseStrikeRate = 115;
-  }
-  
-  // Adjust based on skill
-  const skillMultiplier = {
-    "beginner": 0.7,
-    "intermediate": 0.85,
-    "advanced": 1,
-    "expert": 1.15,
-    "world-class": 1.3
-  };
-  
-  const strikeRate = baseStrikeRate * skillMultiplier[skill];
-  
-  // Add some randomness
-  return +(strikeRate + (Math.random() * 20 - 10)).toFixed(2);
-};
-
-// Generate bowling average based on role and skill
-const generateBowlingAverage = (role, skill) => {
-  let baseAverage;
-  
-  switch (role) {
-    case "bowler":
-      baseAverage = 25;
-      break;
-    case "allRounder":
-      baseAverage = 30;
-      break;
-    case "batsman":
-    case "wicketKeeper":
-      baseAverage = 45;
-      break;
-    default:
-      baseAverage = 35;
-  }
-  
-  // Adjust based on skill
-  const skillMultiplier = {
-    "beginner": 1.3,
-    "intermediate": 1.15,
-    "advanced": 1,
-    "expert": 0.85,
-    "world-class": 0.7
-  };
-  
-  const average = baseAverage * skillMultiplier[skill];
-  
-  // Add some randomness
-  return +(average + (Math.random() * 10 - 5)).toFixed(2);
-};
-
-// Generate economy rate based on role and skill
-const generateEconomyRate = (role, skill) => {
-  let baseEconomyRate;
-  
-  switch (role) {
-    case "bowler":
-      baseEconomyRate = 7.5;
-      break;
-    case "allRounder":
-      baseEconomyRate = 8;
-      break;
-    case "batsman":
-    case "wicketKeeper":
-      baseEconomyRate = 9.5;
-      break;
-    default:
-      baseEconomyRate = 8.5;
-  }
-  
-  // Adjust based on skill
-  const skillMultiplier = {
-    "beginner": 1.3,
-    "intermediate": 1.15,
-    "advanced": 1,
-    "expert": 0.85,
-    "world-class": 0.7
-  };
-  
-  const economyRate = baseEconomyRate * skillMultiplier[skill];
-  
-  // Add some randomness
-  return +(economyRate + (Math.random() * 2 - 1)).toFixed(2);
-};
-
-// Generate best bowling figures
-const generateBestBowling = () => {
-  const wickets = Math.floor(Math.random() * 6) + 1;
-  const runs = Math.floor(Math.random() * 30) + 10;
-  return `${wickets}/${runs}`;
-};
-
-// Generate match date
-const generateMatchDate = (matchIndex) => {
-  // Start today and add days based on match index
-  const date = new Date();
-  date.setDate(date.getDate() + matchIndex);
-  
-  // Add a random hour between 10 AM and 7 PM
-  date.setHours(10 + Math.floor(Math.random() * 10), 0, 0);
-  
-  return date.toISOString();
-};
-
-// Generate venue
-const generateVenue = () => {
-  return getRandomElement(venues);
-};
+const STORAGE_KEY = 'cricket_tournament_data';
 
 /**
- * Generate a pool of players for the tournament
- * @param {Object} poolConfig - Configuration for player pool
- * @param {number} teamBudget - Team budget (for calculating base prices)
- * @returns {Array} Array of player objects
+ * Create a new tournament
+ * @param {Object} tournamentData - Tournament data
+ * @returns {Object} Created tournament
  */
-export const generatePlayerPool = (poolConfig, teamBudget) => {
-  // Calculate base price (approximately 5% of team budget)
-  const basePrice = +(teamBudget * 0.05).toFixed(2);
-  
-  const players = [];
-  
-  // Generate batsmen
-  for (let i = 0; i < poolConfig.batsmen; i++) {
-    // Vary base price a bit based on index
-    const playerBasePrice = +(basePrice * (0.8 + (Math.random() * 0.4))).toFixed(2);
-    players.push(generatePlayer("batsman", playerBasePrice));
-  }
-  
-  // Generate bowlers
-  for (let i = 0; i < poolConfig.bowlers; i++) {
-    const playerBasePrice = +(basePrice * (0.8 + (Math.random() * 0.4))).toFixed(2);
-    players.push(generatePlayer("bowler", playerBasePrice));
-  }
-  
-  // Generate all-rounders
-  for (let i = 0; i < poolConfig.allRounders; i++) {
-    const playerBasePrice = +(basePrice * (0.9 + (Math.random() * 0.6))).toFixed(2);
-    players.push(generatePlayer("allRounder", playerBasePrice));
-  }
-  
-  // Generate wicket-keepers
-  for (let i = 0; i < poolConfig.wicketKeepers; i++) {
-    const playerBasePrice = +(basePrice * (0.85 + (Math.random() * 0.5))).toFixed(2);
-    players.push(generatePlayer("wicketKeeper", playerBasePrice));
-  }
-  
-  return players;
-};
-
-/**
- * Generate a tournament schedule
- * @param {Array} teams - Array of team objects
- * @param {string} format - Tournament format ('league', 'knockout', 'groups')
- * @returns {Array} Array of match objects
- */
-export const generateTournamentSchedule = (teams, format = 'league') => {
-  const matches = [];
-  
-  if (format === 'league') {
-    // Round-robin format: each team plays against every other team once
-    for (let i = 0; i < teams.length; i++) {
-      for (let j = i + 1; j < teams.length; j++) {
-        // Create a match between teams[i] and teams[j]
-        const match = {
-          id: generateUniqueId(),
-          team1: {
-            id: teams[i].id,
-            name: teams[i].name,
-            color: teams[i].color
-          },
-          team2: {
-            id: teams[j].id,
-            name: teams[j].name,
-            color: teams[j].color
-          },
-          date: generateMatchDate(matches.length),
-          venue: generateVenue(),
-          status: 'scheduled'
-        };
-        
-        matches.push(match);
-      }
-    }
-  } else if (format === 'knockout') {
-    // Implement knockout format logic
-    // Generate matches for the first round
+export const createTournament = (tournamentData) => {
+  try {
+    const id = tournamentData.id || uuidv4();
+    const now = new Date().toISOString();
     
-    // Example for 8 teams (quarterfinals):
-    for (let i = 0; i < teams.length / 2; i++) {
-      const match = {
-        id: generateUniqueId(),
-        team1: {
-          id: teams[i].id,
-          name: teams[i].name,
-          color: teams[i].color
-        },
-        team2: {
-          id: teams[teams.length - 1 - i].id,
-          name: teams[teams.length - 1 - i].name,
-          color: teams[teams.length - 1 - i].color
-        },
-        date: generateMatchDate(i),
-        venue: generateVenue(),
-        status: 'scheduled',
-        round: 'quarterfinal',
-        matchNumber: i + 1
+    // Generate access codes
+    const captainCode = generateAccessCode(6);
+    const viewerCode = generateAccessCode(6);
+    
+    // Generate team budgets
+    const teamBudget = tournamentData.teamBudget || 10000000; // 1 Crore default
+    const teams = tournamentData.teams || [];
+    
+    // Ensure each team has required properties
+    const enhancedTeams = teams.map(team => ({
+      id: team.id || uuidv4(),
+      name: team.name,
+      shortName: team.shortName || team.name.substring(0, 3).toUpperCase(),
+      color: team.color || generateTeamColor(),
+      logo: team.logo || null,
+      captainId: team.captainId || null,
+      members: team.members || [],
+      budget: team.budget || teamBudget,
+      playersAcquired: team.playersAcquired || []
+    }));
+    
+    // Generate player pool if needed
+    let players = tournamentData.players || [];
+    
+    if (players.length === 0 && tournamentData.generatePlayers) {
+      const poolConfig = {
+        batsmen: tournamentData.batsmenCount || 20,
+        bowlers: tournamentData.bowlersCount || 20,
+        allRounders: tournamentData.allRoundersCount || 15,
+        wicketKeepers: tournamentData.wicketKeepersCount || 10
       };
       
-      matches.push(match);
+      players = generatePlayerPool(poolConfig, teamBudget);
     }
     
-    // Placeholder matches for semifinals and final
-    // These will be updated once quarterfinals are complete
+    // Generate schedule if needed
+    let matches = tournamentData.matches || [];
     
-    // Semifinals
-    matches.push({
-      id: generateUniqueId(),
-      team1: { id: null, name: "TBD", color: "#cccccc" },
-      team2: { id: null, name: "TBD", color: "#cccccc" },
-      date: generateMatchDate(matches.length),
-      venue: generateVenue(),
-      status: 'scheduled',
-      round: 'semifinal',
-      matchNumber: 1,
-      dependsOn: [1, 2] // Match numbers from quarterfinals
-    });
+    if (matches.length === 0 && enhancedTeams.length > 1) {
+      matches = generateTournamentSchedule(
+        enhancedTeams, 
+        tournamentData.format || 'league'
+      );
+    }
     
-    matches.push({
-      id: generateUniqueId(),
-      team1: { id: null, name: "TBD", color: "#cccccc" },
-      team2: { id: null, name: "TBD", color: "#cccccc" },
-      date: generateMatchDate(matches.length),
-      venue: generateVenue(),
-      status: 'scheduled',
-      round: 'semifinal',
-      matchNumber: 2,
-      dependsOn: [3, 4] // Match numbers from quarterfinals
-    });
-    
-    // Final
-    matches.push({
-      id: generateUniqueId(),
-      team1: { id: null, name: "TBD", color: "#cccccc" },
-      team2: { id: null, name: "TBD", color: "#cccccc" },
-      date: generateMatchDate(matches.length + 1), // Add extra day for final
-      venue: generateVenue(),
-      status: 'scheduled',
-      round: 'final',
-      matchNumber: 1,
-      dependsOn: [1, 2] // Match numbers from semifinals
-    });
-  } else if (format === 'groups') {
-    // Implement groups format logic
-    // Divide teams into groups
-    const groupCount = Math.min(2, Math.floor(teams.length / 3)); // At least 3 teams per group
-    const groups = Array(groupCount).fill().map(() => []);
-    
-    // Distribute teams to groups
-    teams.forEach((team, index) => {
-      const groupIndex = index % groupCount;
-      groups[groupIndex].push(team);
-    });
-    
-    // Generate matches within each group (round robin)
-    let matchNumber = 1;
-    groups.forEach((groupTeams, groupIndex) => {
-      for (let i = 0; i < groupTeams.length; i++) {
-        for (let j = i + 1; j < groupTeams.length; j++) {
-          const match = {
-            id: generateUniqueId(),
-            team1: {
-              id: groupTeams[i].id,
-              name: groupTeams[i].name,
-              color: groupTeams[i].color
-            },
-            team2: {
-              id: groupTeams[j].id,
-              name: groupTeams[j].name,
-              color: groupTeams[j].color
-            },
-            date: generateMatchDate(matches.length),
-            venue: generateVenue(),
-            status: 'scheduled',
-            group: `Group ${String.fromCharCode(65 + groupIndex)}`, // Group A, B, etc.
-            matchNumber: matchNumber++
-          };
-          
-          matches.push(match);
+    // Create tournament object
+    const tournament = {
+      id,
+      name: tournamentData.name,
+      description: tournamentData.description || '',
+      format: tournamentData.format || 'league',
+      status: tournamentData.status || 'draft',
+      startDate: tournamentData.startDate || now,
+      endDate: tournamentData.endDate || null,
+      teamBudget,
+      teams: enhancedTeams,
+      players,
+      matches,
+      createdBy: tournamentData.createdBy || null,
+      createdAt: now,
+      updatedAt: now,
+      captainCode,
+      viewerCode,
+      settings: {
+        playerDisplaySettings: tournamentData.playerDisplaySettings || {
+          showBasePrice: true,
+          showStats: true,
+          showTeam: true
+        },
+        auctionSettings: tournamentData.auctionSettings || {
+          timerDuration: 15,
+          minBidIncrement: 100000, // 1 Lakh default
+          allowAutoBidding: false,
+          allowTeamViewers: true
+        },
+        matchSettings: tournamentData.matchSettings || {
+          overs: 20,
+          playersPerTeam: 11,
+          pointsPerWin: 2,
+          pointsPerTie: 1,
+          pointsPerLoss: 0
         }
       }
-    });
+    };
     
-    // Add playoffs between groups
-    // Top teams from each group advance
+    // Save to storage
+    saveToStorage(`${STORAGE_KEY}_${id}`, tournament);
     
-    // Final
-    matches.push({
-      id: generateUniqueId(),
-      team1: { id: null, name: "Winner Group A", color: "#cccccc" },
-      team2: { id: null, name: "Winner Group B", color: "#cccccc" },
-      date: generateMatchDate(matches.length + 1), // Add extra day for final
-      venue: generateVenue(),
-      status: 'scheduled',
-      round: 'final',
-      matchNumber: matchNumber++
-    });
+    // Add to tournament list
+    const tournamentList = getFromStorage('tournament_list', []);
+    const tournamentSummary = {
+      id: tournament.id,
+      name: tournament.name,
+      status: tournament.status,
+      format: tournament.format,
+      teamCount: tournament.teams.length,
+      playerCount: tournament.players.length,
+      startDate: tournament.startDate,
+      updatedAt: tournament.updatedAt
+    };
+    
+    if (!tournamentList.some(t => t.id === id)) {
+      tournamentList.push(tournamentSummary);
+      saveToStorage('tournament_list', tournamentList);
+    }
+    
+    return tournament;
+  } catch (error) {
+    console.error('Error creating tournament:', error);
+    throw error;
   }
-  
-  return matches;
 };
 
 /**
- * Update tournament schedule after match results
- * @param {Array} matches - Array of match objects
- * @param {string} format - Tournament format ('league', 'knockout', 'groups')
- * @returns {Array} Updated array of match objects
+ * Get tournament by ID
+ * @param {string} id - Tournament ID
+ * @returns {Object} Tournament data
  */
-export const updateTournamentSchedule = (matches, format = 'league') => {
-  if (format !== 'knockout' && format !== 'groups') {
-    // No updates needed for league format
-    return matches;
+export const getTournamentById = (id) => {
+  try {
+    return getFromStorage(`${STORAGE_KEY}_${id}`);
+  } catch (error) {
+    console.error('Error getting tournament:', error);
+    return null;
   }
-  
-  const updatedMatches = [...matches];
-  
-  // Find completed matches
-  const completedMatches = updatedMatches.filter(match => 
-    match.status === 'completed' && match.winnerId
-  );
-  
-  // Update dependent matches
-  updatedMatches.forEach(match => {
-    if (match.dependsOn && (match.team1.id === null || match.team2.id === null)) {
-      const dependentMatches = match.dependsOn.map(matchNumber => 
-        completedMatches.find(m => m.matchNumber === matchNumber)
-      ).filter(Boolean);
+};
+
+/**
+ * Get all tournaments
+ * @returns {Array} Array of tournament summaries
+ */
+export const getAllTournaments = () => {
+  try {
+    return getFromStorage('tournament_list', []);
+  } catch (error) {
+    console.error('Error getting tournament list:', error);
+    return [];
+  }
+};
+
+/**
+ * Update tournament
+ * @param {string} id - Tournament ID
+ * @param {Object} updateData - Fields to update
+ * @returns {Object} Updated tournament
+ */
+export const updateTournament = (id, updateData) => {
+  try {
+    const tournament = getTournamentById(id);
+    
+    if (!tournament) {
+      throw new Error('Tournament not found');
+    }
+    
+    // Create updated tournament object
+    const updatedTournament = {
+      ...tournament,
+      ...updateData,
+      updatedAt: new Date().toISOString()
+    };
+    
+    // Handle nested objects like settings
+    if (updateData.settings) {
+      updatedTournament.settings = {
+        ...tournament.settings,
+        ...updateData.settings
+      };
+    }
+    
+    // Save updated tournament
+    saveToStorage(`${STORAGE_KEY}_${id}`, updatedTournament);
+    
+    // Update tournament list
+    const tournamentList = getFromStorage('tournament_list', []);
+    const updatedList = tournamentList.map(t => {
+      if (t.id === id) {
+        return {
+          ...t,
+          name: updatedTournament.name,
+          status: updatedTournament.status,
+          format: updatedTournament.format,
+          teamCount: updatedTournament.teams.length,
+          playerCount: updatedTournament.players.length,
+          startDate: updatedTournament.startDate,
+          updatedAt: updatedTournament.updatedAt
+        };
+      }
+      return t;
+    });
+    
+    saveToStorage('tournament_list', updatedList);
+    
+    return updatedTournament;
+  } catch (error) {
+    console.error('Error updating tournament:', error);
+    throw error;
+  }
+};
+
+/**
+ * Delete tournament
+ * @param {string} id - Tournament ID
+ * @returns {boolean} Success status
+ */
+export const deleteTournament = (id) => {
+  try {
+    // Remove tournament data
+    removeFromStorage(`${STORAGE_KEY}_${id}`);
+    
+    // Update tournament list
+    const tournamentList = getFromStorage('tournament_list', []);
+    const updatedList = tournamentList.filter(t => t.id !== id);
+    saveToStorage('tournament_list', updatedList);
+    
+    return true;
+  } catch (error) {
+    console.error('Error deleting tournament:', error);
+    return false;
+  }
+};
+
+/**
+ * Add team to tournament
+ * @param {string} tournamentId - Tournament ID
+ * @param {Object} teamData - Team data
+ * @returns {Object} Updated tournament
+ */
+export const addTeamToTournament = (tournamentId, teamData) => {
+  try {
+    const tournament = getTournamentById(tournamentId);
+    
+    if (!tournament) {
+      throw new Error('Tournament not found');
+    }
+    
+    const teamId = teamData.id || uuidv4();
+    
+    // Create team object
+    const team = {
+      id: teamId,
+      name: teamData.name,
+      shortName: teamData.shortName || teamData.name.substring(0, 3).toUpperCase(),
+      color: teamData.color || generateTeamColor(),
+      logo: teamData.logo || null,
+      captainId: teamData.captainId || null,
+      members: teamData.members || [],
+      budget: teamData.budget || tournament.teamBudget,
+      playersAcquired: []
+    };
+    
+    // Update tournament with new team
+    const updatedTournament = {
+      ...tournament,
+      teams: [...tournament.teams, team],
+      updatedAt: new Date().toISOString()
+    };
+    
+    // Generate new schedule if in draft mode
+    if (tournament.status === 'draft' && tournament.format !== 'custom') {
+      updatedTournament.matches = generateTournamentSchedule(
+        updatedTournament.teams, 
+        updatedTournament.format
+      );
+    }
+    
+    // Save updated tournament
+    saveToStorage(`${STORAGE_KEY}_${tournamentId}`, updatedTournament);
+    
+    // Update tournament list
+    const tournamentList = getFromStorage('tournament_list', []);
+    const updatedList = tournamentList.map(t => {
+      if (t.id === tournamentId) {
+        return {
+          ...t,
+          teamCount: updatedTournament.teams.length,
+          updatedAt: updatedTournament.updatedAt
+        };
+      }
+      return t;
+    });
+    
+    saveToStorage('tournament_list', updatedList);
+    
+    return updatedTournament;
+  } catch (error) {
+    console.error('Error adding team to tournament:', error);
+    throw error;
+  }
+};
+
+/**
+ * Remove team from tournament
+ * @param {string} tournamentId - Tournament ID
+ * @param {string} teamId - Team ID
+ * @returns {Object} Updated tournament
+ */
+export const removeTeamFromTournament = (tournamentId, teamId) => {
+  try {
+    const tournament = getTournamentById(tournamentId);
+    
+    if (!tournament) {
+      throw new Error('Tournament not found');
+    }
+    
+    // Update tournament without this team
+    const updatedTournament = {
+      ...tournament,
+      teams: tournament.teams.filter(team => team.id !== teamId),
+      updatedAt: new Date().toISOString()
+    };
+    
+    // Update player teams
+    updatedTournament.players = updatedTournament.players.map(player => {
+      if (player.team === teamId) {
+        return { ...player, team: null, soldPrice: 0 };
+      }
+      return player;
+    });
+    
+    // Generate new schedule if in draft mode
+    if (tournament.status === 'draft' && tournament.format !== 'custom') {
+      updatedTournament.matches = generateTournamentSchedule(
+        updatedTournament.teams, 
+        updatedTournament.format
+      );
+    } else {
+      // Remove team from matches
+      updatedTournament.matches = updatedTournament.matches.map(match => {
+        if (match.team1.id === teamId) {
+          return { ...match, team1: { id: null, name: "TBD", color: "#cccccc" } };
+        }
+        if (match.team2.id === teamId) {
+          return { ...match, team2: { id: null, name: "TBD", color: "#cccccc" } };
+        }
+        return match;
+      });
+    }
+    
+    // Save updated tournament
+    saveToStorage(`${STORAGE_KEY}_${tournamentId}`, updatedTournament);
+    
+    // Update tournament list
+    const tournamentList = getFromStorage('tournament_list', []);
+    const updatedList = tournamentList.map(t => {
+      if (t.id === tournamentId) {
+        return {
+          ...t,
+          teamCount: updatedTournament.teams.length,
+          updatedAt: updatedTournament.updatedAt
+        };
+      }
+      return t;
+    });
+    
+    saveToStorage('tournament_list', updatedList);
+    
+    return updatedTournament;
+  } catch (error) {
+    console.error('Error removing team from tournament:', error);
+    throw error;
+  }
+};
+
+/**
+ * Start the tournament auction phase
+ * @param {string} tournamentId - Tournament ID
+ * @returns {Object} Updated tournament
+ */
+export const startTournamentAuction = (tournamentId) => {
+  try {
+    const tournament = getTournamentById(tournamentId);
+    
+    if (!tournament) {
+      throw new Error('Tournament not found');
+    }
+    
+    if (tournament.status !== 'draft') {
+      throw new Error('Tournament must be in draft status to start auction');
+    }
+    
+    // Update tournament status
+    const updatedTournament = {
+      ...tournament,
+      status: 'auction',
+      updatedAt: new Date().toISOString()
+    };
+    
+    // Save updated tournament
+    saveToStorage(`${STORAGE_KEY}_${tournamentId}`, updatedTournament);
+    
+    // Update tournament list
+    const tournamentList = getFromStorage('tournament_list', []);
+    const updatedList = tournamentList.map(t => {
+      if (t.id === tournamentId) {
+        return {
+          ...t,
+          status: 'auction',
+          updatedAt: updatedTournament.updatedAt
+        };
+      }
+      return t;
+    });
+    
+    saveToStorage('tournament_list', updatedList);
+    
+    // Initialize auction for this tournament
+    initializeAuction(updatedTournament);
+    
+    return updatedTournament;
+  } catch (error) {
+    console.error('Error starting tournament auction:', error);
+    throw error;
+  }
+};
+
+/**
+ * Complete the tournament auction phase and move to matches
+ * @param {string} tournamentId - Tournament ID
+ * @returns {Object} Updated tournament
+ */
+export const completeTournamentAuction = (tournamentId) => {
+  try {
+    const tournament = getTournamentById(tournamentId);
+    
+    if (!tournament) {
+      throw new Error('Tournament not found');
+    }
+    
+    if (tournament.status !== 'auction') {
+      throw new Error('Tournament must be in auction status to complete auction');
+    }
+    
+    // Update tournament status
+    const updatedTournament = {
+      ...tournament,
+      status: 'active',
+      updatedAt: new Date().toISOString()
+    };
+    
+    // Save updated tournament
+    saveToStorage(`${STORAGE_KEY}_${tournamentId}`, updatedTournament);
+    
+    // Update tournament list
+    const tournamentList = getFromStorage('tournament_list', []);
+    const updatedList = tournamentList.map(t => {
+      if (t.id === tournamentId) {
+        return {
+          ...t,
+          status: 'active',
+          updatedAt: updatedTournament.updatedAt
+        };
+      }
+      return t;
+    });
+    
+    saveToStorage('tournament_list', updatedList);
+    
+    return updatedTournament;
+  } catch (error) {
+    console.error('Error completing tournament auction:', error);
+    throw error;
+  }
+};
+
+/**
+ * Update match result
+ * @param {string} tournamentId - Tournament ID
+ * @param {string} matchId - Match ID
+ * @param {Object} resultData - Match result data
+ * @returns {Object} Updated tournament
+ */
+export const updateMatchResult = (tournamentId, matchId, resultData) => {
+  try {
+    const tournament = getTournamentById(tournamentId);
+    
+    if (!tournament) {
+      throw new Error('Tournament not found');
+    }
+    
+    // Find the match
+    const matchIndex = tournament.matches.findIndex(match => match.id === matchId);
+    
+    if (matchIndex === -1) {
+      throw new Error('Match not found');
+    }
+    
+    const match = tournament.matches[matchIndex];
+    
+    // Validate teams
+    if (!match.team1.id || !match.team2.id) {
+      throw new Error('Both teams must be assigned before updating match result');
+    }
+    
+    // Create full match result with player performances
+    const team1Players = tournament.players.filter(p => p.team === match.team1.id);
+    const team2Players = tournament.players.filter(p => p.team === match.team2.id);
+    
+    // Generate player performances if not provided
+    let fullResult = { ...resultData };
+    
+    if (!resultData.team1Performance) {
+      const team1Performance = generatePlayerPerformance(
+        team1Players, 
+        resultData.team1Score, 
+        resultData.team1Wickets
+      );
+      fullResult.team1Performance = team1Performance;
+    }
+    
+    if (!resultData.team2Performance) {
+      const team2Performance = generatePlayerPerformance(
+        team2Players, 
+        resultData.team2Score, 
+        resultData.team2Wickets
+      );
+      fullResult.team2Performance = team2Performance;
+    }
+    
+    // Determine winner
+    let winnerId;
+    if (resultData.team1Score > resultData.team2Score) {
+      winnerId = match.team1.id;
+    } else if (resultData.team2Score > resultData.team1Score) {
+      winnerId = match.team2.id;
+    } else {
+      winnerId = null; // Tie
+    }
+    
+    // Update match
+    const updatedMatch = {
+      ...match,
+      status: 'completed',
+      result: {
+        ...fullResult,
+        winnerId,
+        winMargin: Math.abs(resultData.team1Score - resultData.team2Score),
+        winType: resultData.team1Wickets === 10 || resultData.team2Wickets === 10 ? 'runs' : 'wickets',
+        completedAt: new Date().toISOString()
+      }
+    };
+    
+    // Update tournament with updated match
+    const updatedMatches = [...tournament.matches];
+    updatedMatches[matchIndex] = updatedMatch;
+    
+    // Update tournament
+    const updatedTournament = {
+      ...tournament,
+      matches: updatedMatches,
+      updatedAt: new Date().toISOString()
+    };
+    
+    // If knockout format, update dependent matches
+    if (tournament.format === 'knockout' || tournament.format === 'groups') {
+      updatedTournament.matches = updateTournamentSchedule(
+        updatedMatches,
+        tournament.format
+      );
+    }
+    
+    // Save updated tournament
+    saveToStorage(`${STORAGE_KEY}_${tournamentId}`, updatedTournament);
+    
+    return updatedTournament;
+  } catch (error) {
+    console.error('Error updating match result:', error);
+    throw error;
+  }
+};
+
+/**
+ * Complete the tournament
+ * @param {string} tournamentId - Tournament ID
+ * @param {string} winnerTeamId - ID of the winning team
+ * @returns {Object} Updated tournament
+ */
+export const completeTournament = (tournamentId, winnerTeamId) => {
+  try {
+    const tournament = getTournamentById(tournamentId);
+    
+    if (!tournament) {
+      throw new Error('Tournament not found');
+    }
+    
+    if (tournament.status !== 'active') {
+      throw new Error('Tournament must be active to complete');
+    }
+    
+    // Validate winner
+    if (!tournament.teams.some(team => team.id === winnerTeamId)) {
+      throw new Error('Winner team not found in tournament');
+    }
+    
+    // Update tournament status
+    const updatedTournament = {
+      ...tournament,
+      status: 'completed',
+      winner: {
+        teamId: winnerTeamId,
+        teamName: tournament.teams.find(t => t.id === winnerTeamId).name
+      },
+      endDate: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    
+    // Save updated tournament
+    saveToStorage(`${STORAGE_KEY}_${tournamentId}`, updatedTournament);
+    
+    // Update tournament list
+    const tournamentList = getFromStorage('tournament_list', []);
+    const updatedList = tournamentList.map(t => {
+      if (t.id === tournamentId) {
+        return {
+          ...t,
+          status: 'completed',
+          updatedAt: updatedTournament.updatedAt
+        };
+      }
+      return t;
+    });
+    
+    saveToStorage('tournament_list', updatedList);
+    
+    return updatedTournament;
+  } catch (error) {
+    console.error('Error completing tournament:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get team standings for the tournament
+ * @param {string} tournamentId - Tournament ID
+ * @returns {Array} Team standings
+ */
+export const getTournamentStandings = (tournamentId) => {
+  try {
+    const tournament = getTournamentById(tournamentId);
+    
+    if (!tournament) {
+      throw new Error('Tournament not found');
+    }
+    
+    // Calculate points and stats for each team
+    const standings = tournament.teams.map(team => {
+      // Find all completed matches involving this team
+      const matches = tournament.matches.filter(match => 
+        (match.team1.id === team.id || match.team2.id === team.id) && 
+        match.status === 'completed'
+      );
       
-      // If all dependent matches are completed, update this match
-      if (dependentMatches.length === match.dependsOn.length) {
-        // For semifinals
-        if (match.round === 'semifinal') {
-          // First semifinal gets winners from first two quarterfinals
-          if (match.matchNumber === 1) {
-            const winner1 = completedMatches.find(m => m.matchNumber === 1);
-            const winner2 = completedMatches.find(m => m.matchNumber === 2);
-            
-            if (winner1 && winner2) {
-              match.team1 = {
-                id: winner1.winnerId,
-                name: winner1.winnerId === winner1.team1.id ? winner1.team1.name : winner1.team2.name,
-                color: winner1.winnerId === winner1.team1.id ? winner1.team1.color : winner1.team2.color
-              };
-              
-              match.team2 = {
-                id: winner2.winnerId,
-                name: winner2.winnerId === winner2.team1.id ? winner2.team1.name : winner2.team2.name,
-                color: winner2.winnerId === winner2.team1.id ? winner2.team1.color : winner2.team2.color
-              };
-            }
-          }
-          // Second semifinal gets winners from second two quarterfinals
-          else if (match.matchNumber === 2) {
-            const winner3 = completedMatches.find(m => m.matchNumber === 3);
-            const winner4 = completedMatches.find(m => m.matchNumber === 4);
-            
-            if (winner3 && winner4) {
-              match.team1 = {
-                id: winner3.winnerId,
-                name: winner3.winnerId === winner3.team1.id ? winner3.team1.name : winner3.team2.name,
-                color: winner3.winnerId === winner3.team1.id ? winner3.team1.color : winner3.team2.color
-              };
-              
-              match.team2 = {
-                id: winner4.winnerId,
-                name: winner4.winnerId === winner4.team1.id ? winner4.team1.name : winner4.team2.name,
-                color: winner4.winnerId === winner4.team1.id ? winner4.team1.color : winner4.team2.color
-              };
-            }
-          }
+      // Calculate wins, losses, ties
+      let wins = 0;
+      let losses = 0;
+      let ties = 0;
+      let runsScored = 0;
+      let runsAgainst = 0;
+      let matchesPlayed = matches.length;
+      
+      matches.forEach(match => {
+        const isTeam1 = match.team1.id === team.id;
+        const teamScore = isTeam1 ? match.result.team1Score : match.result.team2Score;
+        const opponentScore = isTeam1 ? match.result.team2Score : match.result.team1Score;
+        
+        runsScored += teamScore;
+        runsAgainst += opponentScore;
+        
+        if (match.result.winnerId === team.id) {
+          wins++;
+        } else if (match.result.winnerId === null) {
+          ties++;
+        } else {
+          losses++;
         }
-        // For final
-        else if (match.round === 'final') {
-          const winner1 = completedMatches.find(m => m.round === 'semifinal' && m.matchNumber === 1);
-          const winner2 = completedMatches.find(m => m.round === 'semifinal' && m.matchNumber === 2);
-          
-          if (winner1 && winner2) {
-            match.team1 = {
-              id: winner1.winnerId,
-              name: winner1.winnerId === winner1.team1.id ? winner1.team1.name : winner1.team2.name,
-              color: winner1.winnerId === winner1.team1.id ? winner1.team1.color : winner1.team2.color
-            };
-            
-            match.team2 = {
-              id: winner2.winnerId,
-              name: winner2.winnerId === winner2.team1.id ? winner2.team1.name : winner2.team2.name,
-              color: winner2.winnerId === winner2.team1.id ? winner2.team1.color : winner2.team2.color
-            };
-          }
-        }
+      });
+      
+      // Calculate points
+      const pointsPerWin = tournament.settings?.matchSettings?.pointsPerWin || 2;
+      const pointsPerTie = tournament.settings?.matchSettings?.pointsPerTie || 1;
+      const pointsPerLoss = tournament.settings?.matchSettings?.pointsPerLoss || 0;
+      
+      const points = (wins * pointsPerWin) + (ties * pointsPerTie) + (losses * pointsPerLoss);
+      
+      // Calculate net run rate
+      const netRunRate = matchesPlayed > 0 
+        ? +((runsScored - runsAgainst) / matchesPlayed).toFixed(3) 
+        : 0;
+      
+      return {
+        teamId: team.id,
+        teamName: team.name,
+        teamColor: team.color,
+        matches: matchesPlayed,
+        wins,
+        losses,
+        ties,
+        points,
+        runsScored,
+        runsAgainst,
+        netRunRate
+      };
+    });
+    
+    // Sort by points, then by net run rate
+    standings.sort((a, b) => {
+      if (b.points !== a.points) {
+        return b.points - a.points;
       }
-    }
-  });
-  
-  return updatedMatches;
+      return b.netRunRate - a.netRunRate;
+    });
+    
+    return standings;
+  } catch (error) {
+    console.error('Error getting tournament standings:', error);
+    throw error;
+  }
 };
 
 /**
- * Generate player performance for a match
- * @param {Array} teamPlayers - Array of player objects for a team
- * @param {number} totalRuns - Total runs scored by the team
- * @param {number} wickets - Total wickets lost by the team
- * @returns {Object} Performance statistics for each player
+ * Get player statistics for the tournament
+ * @param {string} tournamentId - Tournament ID
+ * @returns {Object} Player statistics
  */
-export const generatePlayerPerformance = (teamPlayers, totalRuns, wickets) => {
-  // Create the batting order
-  const battingOrder = [...teamPlayers];
-  
-  // Sort batting order based on role
-  battingOrder.sort((a, b) => {
-    const roleOrder = { 'batsman': 0, 'wicketKeeper': 1, 'allRounder': 2, 'bowler': 3 };
-    return roleOrder[a.role] - roleOrder[b.role];
-  });
-  
-  // Add some randomness to the batting order
-  for (let i = 0; i < 3; i++) {
-    const idx1 = Math.floor(Math.random() * battingOrder.length);
-    const idx2 = Math.floor(Math.random() * battingOrder.length);
-    [battingOrder[idx1], battingOrder[idx2]] = [battingOrder[idx2], battingOrder[idx1]];
-  }
-  
-  // Generate batting performance
-  const battingPerformance = [];
-  let runsLeft = totalRuns;
-  
-  // Distribute runs among batsmen
-  for (let i = 0; i < Math.min(wickets + 1, battingOrder.length); i++) {
-    const player = battingOrder[i];
-    const isOut = i < wickets;
+export const getPlayerStatistics = (tournamentId) => {
+  try {
+    const tournament = getTournamentById(tournamentId);
     
-    // Calculate runs for this batsman
-    let runs;
-    if (i === 0) {
-      // Opener gets more runs
-      runs = Math.floor(runsLeft * (0.15 + Math.random() * 0.1));
-    } else if (i === battingOrder.length - 1) {
-      // Last batsman gets all remaining runs
-      runs = runsLeft;
-    } else {
-      // Other batsmen get a portion of remaining runs
-      const portion = Math.random();
-      runs = Math.floor(runsLeft * portion * 0.5);
+    if (!tournament) {
+      throw new Error('Tournament not found');
     }
     
-    // Ensure we don't exceed remaining runs
-    runs = Math.min(runs, runsLeft);
-    runsLeft -= runs;
+    // Get all completed matches
+    const completedMatches = tournament.matches.filter(match => 
+      match.status === 'completed'
+    );
     
-    // Calculate balls faced based on player role and runs scored
-    let ballsFaced;
-    if (player.role === 'batsman') {
-      ballsFaced = Math.floor(runs / (player.stats.battingStrikeRate / 100));
-    } else if (player.role === 'allRounder') {
-      ballsFaced = Math.floor(runs / (player.stats.battingStrikeRate * 0.9 / 100));
-    } else {
-      ballsFaced = Math.floor(runs / (player.stats.battingStrikeRate * 0.8 / 100));
-    }
+    // Initialize player stats
+    const playerStats = {};
     
-    // Ensure ballsFaced is at least 1 if runs > 0
-    ballsFaced = Math.max(1, ballsFaced);
-    
-    // Add to performance
-    battingPerformance.push({
-      playerId: player.id,
-      playerName: player.name,
-      runs,
-      balls: ballsFaced,
-      fours: Math.floor(runs * 0.25 * Math.random()),
-      sixes: Math.floor(runs * 0.1 * Math.random()),
-      notOut: !isOut,
-      dismissalType: isOut ? generateDismissalType() : null,
-      strikeRate: runs > 0 ? +(runs / ballsFaced * 100).toFixed(2) : 0
+    // Process each match
+    completedMatches.forEach(match => {
+      // Process team 1 batting performance
+      match.result.team1Performance.battingPerformance.forEach(performance => {
+        if (!playerStats[performance.playerId]) {
+          playerStats[performance.playerId] = {
+            id: performance.playerId,
+            name: performance.playerName,
+            teamId: match.team1.id,
+            teamName: match.team1.name,
+            matches: 0,
+            batting: {
+              innings: 0,
+              runs: 0,
+              balls: 0,
+              notOuts: 0,
+              fours: 0,
+              sixes: 0,
+              highestScore: 0,
+              average: 0,
+              strikeRate: 0
+            },
+            bowling: {
+              innings: 0,
+              overs: 0,
+              maidens: 0,
+              runs: 0,
+              wickets: 0,
+              economy: 0,
+              average: 0,
+              bestBowling: {
+                wickets: 0,
+                runs: 0
+              }
+            }
+          };
+        }
+        
+        const player = playerStats[performance.playerId];
+        
+        // Update batting stats
+        if (performance.balls > 0) {
+          player.matches = player.matches || 0;
+          player.matches++;
+          
+          player.batting.innings++;
+          player.batting.runs += performance.runs;
+          player.batting.balls += performance.balls;
+          player.batting.fours += performance.fours;
+          player.batting.sixes += performance.sixes;
+          
+          if (performance.notOut) {
+            player.batting.notOuts++;
+          }
+          
+          if (performance.runs > player.batting.highestScore) {
+            player.batting.highestScore = performance.runs;
+          }
+          
+          // Calculate average and strike rate
+          player.batting.average = player.batting.innings - player.batting.notOuts > 0
+            ? +(player.batting.runs / (player.batting.innings - player.batting.notOuts)).toFixed(2)
+            : player.batting.runs;
+            
+          player.batting.strikeRate = player.batting.balls > 0
+            ? +((player.batting.runs / player.batting.balls) * 100).toFixed(2)
+            : 0;
+        }
+      });
+      
+      // Process team 2 batting performance
+      match.result.team2Performance.battingPerformance.forEach(performance => {
+        if (!playerStats[performance.playerId]) {
+          playerStats[performance.playerId] = {
+            id: performance.playerId,
+            name: performance.playerName,
+            teamId: match.team2.id,
+            teamName: match.team2.name,
+            matches: 0,
+            batting: {
+              innings: 0,
+              runs: 0,
+              balls: 0,
+              notOuts: 0,
+              fours: 0,
+              sixes: 0,
+              highestScore: 0,
+              average: 0,
+              strikeRate: 0
+            },
+            bowling: {
+              innings: 0,
+              overs: 0,
+              maidens: 0,
+              runs: 0,
+              wickets: 0,
+              economy: 0,
+              average: 0,
+              bestBowling: {
+                wickets: 0,
+                runs: 0
+              }
+            }
+          };
+        }
+        
+        const player = playerStats[performance.playerId];
+        
+        // Update batting stats
+        if (performance.balls > 0) {
+          player.matches = player.matches || 0;
+          player.matches++;
+          
+          player.batting.innings++;
+          player.batting.runs += performance.runs;
+          player.batting.balls += performance.balls;
+          player.batting.fours += performance.fours;
+          player.batting.sixes += performance.sixes;
+          
+          if (performance.notOut) {
+            player.batting.notOuts++;
+          }
+          
+          if (performance.runs > player.batting.highestScore) {
+            player.batting.highestScore = performance.runs;
+          }
+          
+          // Calculate average and strike rate
+          player.batting.average = player.batting.innings - player.batting.notOuts > 0
+            ? +(player.batting.runs / (player.batting.innings - player.batting.notOuts)).toFixed(2)
+            : player.batting.runs;
+            
+          player.batting.strikeRate = player.batting.balls > 0
+            ? +((player.batting.runs / player.batting.balls) * 100).toFixed(2)
+            : 0;
+        }
+      });
+      
+      // Process team 1 bowling performance
+      match.result.team1Performance.bowlingPerformance.forEach(performance => {
+        if (!playerStats[performance.playerId]) {
+          playerStats[performance.playerId] = {
+            id: performance.playerId,
+            name: performance.playerName,
+            teamId: match.team1.id,
+            teamName: match.team1.name,
+            matches: 1,
+            batting: {
+              innings: 0,
+              runs: 0,
+              balls: 0,
+              notOuts: 0,
+              fours: 0,
+              sixes: 0,
+              highestScore: 0,
+              average: 0,
+              strikeRate: 0
+            },
+            bowling: {
+              innings: 0,
+              overs: 0,
+              maidens: 0,
+              runs: 0,
+              wickets: 0,
+              economy: 0,
+              average: 0,
+              bestBowling: {
+                wickets: 0,
+                runs: 0
+              }
+            }
+          };
+        }
+        
+        const player = playerStats[performance.playerId];
+        
+        // Update bowling stats
+        if (performance.overs > 0) {
+          player.bowling.innings++;
+          player.bowling.overs += performance.overs;
+          player.bowling.maidens += performance.maidens;
+          player.bowling.runs += performance.runs;
+          player.bowling.wickets += performance.wickets;
+          
+          // Check if this is the best bowling performance
+          if (
+            performance.wickets > player.bowling.bestBowling.wickets || 
+            (performance.wickets === player.bowling.bestBowling.wickets && 
+             performance.runs < player.bowling.bestBowling.runs)
+          ) {
+            player.bowling.bestBowling = {
+              wickets: performance.wickets,
+              runs: performance.runs
+            };
+          }
+          
+          // Calculate economy rate
+          player.bowling.economy = +(player.bowling.runs / player.bowling.overs).toFixed(2);
+          
+          // Calculate bowling average
+          player.bowling.average = player.bowling.wickets > 0
+            ? +(player.bowling.runs / player.bowling.wickets).toFixed(2)
+            : null;
+        }
+      });
+      
+      // Process team 2 bowling performance
+      match.result.team2Performance.bowlingPerformance.forEach(performance => {
+        if (!playerStats[performance.playerId]) {
+          playerStats[performance.playerId] = {
+            id: performance.playerId,
+            name: performance.playerName,
+            teamId: match.team2.id,
+            teamName: match.team2.name,
+            matches: 1,
+            batting: {
+              innings: 0,
+              runs: 0,
+              balls: 0,
+              notOuts: 0,
+              fours: 0,
+              sixes: 0,
+              highestScore: 0,
+              average: 0,
+              strikeRate: 0
+            },
+            bowling: {
+              innings: 0,
+              overs: 0,
+              maidens: 0,
+              runs: 0,
+              wickets: 0,
+              economy: 0,
+              average: 0,
+              bestBowling: {
+                wickets: 0,
+                runs: 0
+              }
+            }
+          };
+        }
+        
+        const player = playerStats[performance.playerId];
+        
+        // Update bowling stats
+        if (performance.overs > 0) {
+          player.bowling.innings++;
+          player.bowling.overs += performance.overs;
+          player.bowling.maidens += performance.maidens;
+          player.bowling.runs += performance.runs;
+          player.bowling.wickets += performance.wickets;
+          
+          // Check if this is the best bowling performance
+          if (
+            performance.wickets > player.bowling.bestBowling.wickets || 
+            (performance.wickets === player.bowling.bestBowling.wickets && 
+             performance.runs < player.bowling.bestBowling.runs)
+          ) {
+            player.bowling.bestBowling = {
+              wickets: performance.wickets,
+              runs: performance.runs
+            };
+          }
+          
+          // Calculate economy rate
+          player.bowling.economy = +(player.bowling.runs / player.bowling.overs).toFixed(2);
+          
+          // Calculate bowling average
+          player.bowling.average = player.bowling.wickets > 0
+            ? +(player.bowling.runs / player.bowling.wickets).toFixed(2)
+            : null;
+        }
+      });
     });
     
-    // If all runs are distributed, break
-    if (runsLeft <= 0) break;
-  }
-  
-  // Generate bowling performance
-  const bowlingPerformance = [];
-  const bowlers = teamPlayers.filter(p => p.role === 'bowler' || p.role === 'allRounder');
-  
-  // Distribute overs among bowlers
-  const totalOvers = 20;
-  let oversLeft = totalOvers;
-  let wicketsLeft = 10 - wickets; // Wickets taken by this team
-  
-  for (let i = 0; i < bowlers.length; i++) {
-    const player = bowlers[i];
+    // Convert to array
+    const playerStatsArray = Object.values(playerStats);
     
-    // Calculate overs for this bowler
-    let overs;
-    if (i === bowlers.length - 1) {
-      // Last bowler gets all remaining overs
-      overs = oversLeft;
-    } else {
-      // Other bowlers get a portion of overs
-      overs = Math.min(4, Math.floor(oversLeft / (bowlers.length - i)));
-    }
-    
-    // Ensure we don't exceed remaining overs
-    overs = Math.min(overs, oversLeft);
-    oversLeft -= overs;
-    
-    // Calculate wickets for this bowler
-    let bowlerWickets;
-    if (i === 0) {
-      // Best bowler gets more wickets
-      bowlerWickets = Math.floor(wicketsLeft * 0.4);
-    } else if (i === 1) {
-      // Second best bowler gets a good share
-      bowlerWickets = Math.floor(wicketsLeft * 0.3);
-    } else {
-      // Other bowlers share remaining wickets
-      const portion = Math.random();
-      bowlerWickets = Math.floor(wicketsLeft * portion);
-    }
-    
-    // Ensure we don't exceed remaining wickets
-    bowlerWickets = Math.min(bowlerWickets, wicketsLeft);
-    wicketsLeft -= bowlerWickets;
-    
-    // Calculate runs conceded based on economy rate
-    const runsConceded = Math.floor(player.stats.economyRate * overs);
-    
-    // Add to performance
-    bowlingPerformance.push({
-      playerId: player.id,
-      playerName: player.name,
-      overs,
-      maidens: Math.floor(overs * 0.2 * Math.random()),
-      runs: runsConceded,
-      wickets: bowlerWickets,
-      economy: runsConceded / overs
+    // Add player role and other info from tournament players
+    const enhancedPlayerStats = playerStatsArray.map(playerStat => {
+      const player = tournament.players.find(p => p.id === playerStat.id);
+      if (player) {
+        return {
+          ...playerStat,
+          role: player.role,
+          battingStyle: player.battingStyle,
+          bowlingStyle: player.bowlingStyle
+        };
+      }
+      return playerStat;
     });
+    
+    return enhancedPlayerStats;
+  } catch (error) {
+    console.error('Error getting player statistics:', error);
+    throw error;
   }
-  
-  return {
-    battingPerformance,
-    bowlingPerformance
-  };
 };
 
-// Generate dismissal type
-const generateDismissalType = () => {
-  const types = [
-    "Bowled", "Caught", "LBW", "Run Out", "Stumped", "Caught & Bowled", 
-    "Hit Wicket", "Obstructing the Field", "Timed Out", "Retired Hurt"
-  ];
-  const weights = [30, 40, 15, 8, 3, 2, 1, 0.5, 0.3, 0.2];
-  
-  // Weighted random selection
-  let total = 0;
-  const weightSum = weights.reduce((sum, w) => sum + w, 0);
-  const random = Math.random() * weightSum;
-  
-  for (let i = 0; i < types.length; i++) {
-    total += weights[i];
-    if (random < total) {
-      return types[i];
+/**
+ * Get auction details for a tournament
+ * @param {string} tournamentId - Tournament ID
+ * @returns {Object} Auction details
+ */
+export const getTournamentAuction = (tournamentId) => {
+  try {
+    const tournament = getTournamentById(tournamentId);
+    
+    if (!tournament) {
+      throw new Error('Tournament not found');
     }
+    
+    // Get auction data associated with this tournament
+    const auction = getAuctionById(tournamentId);
+    
+    if (!auction) {
+      // If no auction exists, we need to check if it's in auction status
+      if (tournament.status === 'auction') {
+        // Initialize a new auction
+        return initializeAuction(tournament);
+      }
+      
+      return null;
+    }
+    
+    return auction;
+  } catch (error) {
+    console.error('Error getting tournament auction:', error);
+    return null;
   }
-  
-  return types[0]; // Default to bowled
+};
+
+/**
+ * Update player allocation after auction
+ * @param {string} tournamentId - Tournament ID
+ * @param {Object} auctionData - Auction data with player assignments
+ * @returns {Object} Updated tournament
+ */
+export const updatePlayerAllocation = (tournamentId, auctionData) => {
+  try {
+    const tournament = getTournamentById(tournamentId);
+    
+    if (!tournament) {
+      throw new Error('Tournament not found');
+    }
+    
+    // Update player teams based on auction results
+    const updatedPlayers = tournament.players.map(player => {
+      // Find this player in auction data
+      const auctionPlayer = auctionData.playerPool.find(p => p.id === player.id);
+      
+      if (auctionPlayer && auctionPlayer.status === 'sold') {
+        return {
+          ...player,
+          team: auctionPlayer.soldTo || auctionPlayer.team,
+          soldPrice: auctionPlayer.soldPrice || auctionPlayer.currentBid || player.basePrice
+        };
+      }
+      
+      return player;
+    });
+    
+    // Update team player acquisitions
+    const updatedTeams = tournament.teams.map(team => {
+      // Find all players for this team
+      const teamPlayers = updatedPlayers.filter(p => p.team === team.id);
+      
+      // Calculate total spent
+      const totalSpent = teamPlayers.reduce((sum, player) => sum + (player.soldPrice || 0), 0);
+      
+      return {
+        ...team,
+        playersAcquired: teamPlayers.map(p => ({
+          id: p.id,
+          name: p.name,
+          role: p.role,
+          soldPrice: p.soldPrice || p.basePrice
+        })),
+        budget: team.budget,
+        budgetSpent: totalSpent,
+        budgetRemaining: team.budget - totalSpent
+      };
+    });
+    
+    // Update tournament
+    const updatedTournament = {
+      ...tournament,
+      players: updatedPlayers,
+      teams: updatedTeams,
+      updatedAt: new Date().toISOString()
+    };
+    
+    // Save updated tournament
+    saveToStorage(`${STORAGE_KEY}_${tournamentId}`, updatedTournament);
+    
+    return updatedTournament;
+  } catch (error) {
+    console.error('Error updating player allocation:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get tournament auction history
+ * @param {string} tournamentId - Tournament ID
+ * @returns {Array} Auction history events
+ */
+export const getTournamentAuctionHistory = (tournamentId) => {
+  try {
+    const auction = getAuctionById(tournamentId);
+    
+    if (!auction) {
+      return [];
+    }
+    
+    return auction.history || [];
+  } catch (error) {
+    console.error('Error getting tournament auction history:', error);
+    return [];
+  }
+};
+
+/**
+ * Export tournament data
+ * @param {string} tournamentId - Tournament ID
+ * @returns {Object} Tournament data for export
+ */
+export const exportTournamentData = (tournamentId) => {
+  try {
+    const tournament = getTournamentById(tournamentId);
+    
+    if (!tournament) {
+      throw new Error('Tournament not found');
+    }
+    
+    // Create export object with relevant data
+    const exportData = {
+      tournament: {
+        id: tournament.id,
+        name: tournament.name,
+        description: tournament.description,
+        format: tournament.format,
+        status: tournament.status,
+        startDate: tournament.startDate,
+        endDate: tournament.endDate,
+        createdAt: tournament.createdAt,
+        updatedAt: tournament.updatedAt
+      },
+      teams: tournament.teams.map(team => ({
+        id: team.id,
+        name: team.name,
+        shortName: team.shortName,
+        color: team.color,
+        budget: team.budget,
+        playersAcquired: team.playersAcquired.length
+      })),
+      players: tournament.players.map(player => ({
+        id: player.id,
+        name: player.name,
+        role: player.role,
+        team: player.team,
+        basePrice: player.basePrice,
+        soldPrice: player.soldPrice
+      })),
+      matches: tournament.matches.map(match => ({
+        id: match.id,
+        team1: match.team1.name,
+        team2: match.team2.name,
+        date: match.date,
+        venue: match.venue,
+        status: match.status,
+        result: match.result ? {
+          team1Score: match.result.team1Score,
+          team1Wickets: match.result.team1Wickets,
+          team2Score: match.result.team2Score,
+          team2Wickets: match.result.team2Wickets,
+          winner: match.result.winnerId ? 
+            (match.result.winnerId === match.team1.id ? match.team1.name : match.team2.name) : 
+            'Tie'
+        } : null
+      })),
+      standings: getTournamentStandings(tournamentId),
+      exportedAt: new Date().toISOString()
+    };
+    
+    return exportData;
+  } catch (error) {
+    console.error('Error exporting tournament data:', error);
+    throw error;
+  }
+};
+
+/**
+ * Import tournament data
+ * @param {Object} importData - Tournament data to import
+ * @returns {Object} Imported tournament
+ */
+export const importTournamentData = (importData) => {
+  try {
+    // Extract tournament data
+    const { tournament, teams, players, matches } = importData;
+    
+    // Create new tournament ID
+    const newTournamentId = uuidv4();
+    
+    // Create team ID mapping (old ID to new ID)
+    const teamIdMap = {};
+    teams.forEach(team => {
+      teamIdMap[team.id] = uuidv4();
+    });
+    
+    // Create player ID mapping (old ID to new ID)
+    const playerIdMap = {};
+    players.forEach(player => {
+      playerIdMap[player.id] = uuidv4();
+    });
+    
+    // Create match ID mapping (old ID to new ID)
+    const matchIdMap = {};
+    matches?.forEach(match => {
+      matchIdMap[match.id] = uuidv4();
+    });
+    
+    // Create new tournament data
+    const newTournament = {
+      id: newTournamentId,
+      name: `${tournament.name} (Imported)`,
+      description: tournament.description,
+      format: tournament.format,
+      status: 'draft', // Always start in draft mode
+      startDate: new Date().toISOString(),
+      endDate: null,
+      teamBudget: teams[0]?.budget || 10000000,
+      teams: teams.map(team => ({
+        id: teamIdMap[team.id],
+        name: team.name,
+        shortName: team.shortName,
+        color: team.color,
+        logo: null,
+        captainId: null,
+        members: [],
+        budget: team.budget,
+        playersAcquired: []
+      })),
+      players: players.map(player => ({
+        id: playerIdMap[player.id],
+        name: player.name,
+        role: player.role,
+        basePrice: player.basePrice,
+        team: player.team ? teamIdMap[player.team] : null,
+        soldPrice: player.soldPrice || 0
+      })),
+      matches: matches?.map(match => ({
+        id: matchIdMap[match.id],
+        team1: {
+          id: teamIdMap[match.team1Id],
+          name: match.team1,
+          color: teams.find(t => t.id === match.team1Id)?.color || '#cccccc'
+        },
+        team2: {
+          id: teamIdMap[match.team2Id],
+          name: match.team2,
+          color: teams.find(t => t.id === match.team2Id)?.color || '#cccccc'
+        },
+        date: match.date || new Date().toISOString(),
+        venue: match.venue,
+        status: 'scheduled'
+      })) || [],
+      createdBy: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      captainCode: generateAccessCode(6),
+      viewerCode: generateAccessCode(6),
+      settings: {
+        playerDisplaySettings: {
+          showBasePrice: true,
+          showStats: true,
+          showTeam: true
+        },
+        auctionSettings: {
+          timerDuration: 15,
+          minBidIncrement: 100000,
+          allowAutoBidding: false,
+          allowTeamViewers: true
+        },
+        matchSettings: {
+          overs: 20,
+          playersPerTeam: 11,
+          pointsPerWin: 2,
+          pointsPerTie: 1,
+          pointsPerLoss: 0
+        }
+      }
+    };
+    
+    // Create the tournament
+    return createTournament(newTournament);
+  } catch (error) {
+    console.error('Error importing tournament data:', error);
+    throw error;
+  }
 };
 
 export default {
-  generatePlayerPool,
-  generateTournamentSchedule,
-  updateTournamentSchedule,
-  generatePlayerPerformance
+  createTournament,
+  getTournamentById,
+  getAllTournaments,
+  updateTournament,
+  deleteTournament,
+  addTeamToTournament,
+  removeTeamFromTournament,
+  startTournamentAuction,
+  completeTournamentAuction,
+  updateMatchResult,
+  completeTournament,
+  getTournamentStandings,
+  getPlayerStatistics,
+  getTournamentAuction,
+  updatePlayerAllocation,
+  getTournamentAuctionHistory,
+  exportTournamentData,
+  importTournamentData
 };

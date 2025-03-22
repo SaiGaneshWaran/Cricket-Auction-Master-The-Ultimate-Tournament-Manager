@@ -1,154 +1,105 @@
-import { useState, useEffect, useCallback } from 'react';
+// src/hooks/useMultiDevice.js
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { getFromStorage, saveToStorage } from '../utils/storage';
 
 /**
- * Custom hook for syncing state between multiple devices/tabs
- * Uses a combination of localStorage and BroadcastChannel API
- * With localStorage fallback for older browsers
- * 
- * @param {string} channelName - Unique name for the sync channel
- * @param {string} clientId - Unique ID for the current client/device
- * @param {object} initialState - Initial state value
- * @returns {[object, function]} - [state, updateState]
+ * Custom hook for syncing state across multiple devices/tabs
+ * @param {string} storageKey - Key for localStorage
+ * @param {string} clientId - Unique ID for this client/device
+ * @param {any} initialValue - Initial value
+ * @param {number} syncInterval - Sync interval in milliseconds (default: 1000ms)
+ * @returns {[any, Function]} - [syncedValue, updateValue]
  */
-const useMultiDevice = (channelName, clientId, initialState = {}) => {
-  // State for our local copy of the shared data
-  const [state, setState] = useState(initialState);
+const useMultiDevice = (storageKey, clientId, initialValue = null, syncInterval = 1000) => {
+  const [syncedValue, setSyncedValue] = useState(initialValue);
+  const lastSyncTime = useRef(0);
+  const lastUpdateTime = useRef(0);
   
-  // Reference to our communication channel
-  const [channel, setChannel] = useState(null);
-  
-  // Storage key for localStorage fallback
-  const storageKey = `multi_device_${channelName}`;
-  
-  // Setup the channel when the component mounts
+  // Load initial value from storage if available
   useEffect(() => {
-    let broadcastChannel = null;
-    
-    // Try to use BroadcastChannel API (modern browsers)
-    try {
-      if (typeof BroadcastChannel !== 'undefined') {
-        broadcastChannel = new BroadcastChannel(channelName);
-        
-        // Setup message listener
-        broadcastChannel.onmessage = (event) => {
-          // Don't process our own messages
-          if (event.data.sender !== clientId) {
-            processIncomingMessage(event.data);
-          }
-        };
-        
-        setChannel(broadcastChannel);
-      }
-    } catch (error) {
-      console.warn('BroadcastChannel not supported, falling back to localStorage');
+    const storedValue = getFromStorage(storageKey);
+    if (storedValue) {
+      setSyncedValue(storedValue);
+      lastSyncTime.current = storedValue.lastSyncTime || Date.now();
+    } else if (initialValue) {
+      // Save initial value with sync metadata
+      const valueWithMeta = {
+        ...initialValue,
+        lastSyncTime: Date.now(),
+        lastUpdatedBy: clientId
+      };
+      saveToStorage(storageKey, valueWithMeta);
+      setSyncedValue(valueWithMeta);
     }
-    
-    // Load initial state from localStorage
-    const storedData = localStorage.getItem(storageKey);
-    if (storedData) {
+  }, [storageKey, initialValue, clientId]);
+
+  // Sync with localStorage periodically
+  useEffect(() => {
+    const syncWithStorage = () => {
       try {
-        const parsedData = JSON.parse(storedData);
-        // Only use stored data if it's newer than our initial state
-        if (!initialState.timestamp || (parsedData.timestamp > initialState.timestamp)) {
-          setState(parsedData.state);
+        const storedValue = getFromStorage(storageKey);
+        
+        // If no stored value or it's older than our last update, do nothing
+        if (!storedValue || !storedValue.lastSyncTime) return;
+        
+        // If stored value is newer than our last sync, update local state
+        if (storedValue.lastSyncTime > lastSyncTime.current && 
+            (!storedValue.lastUpdatedBy || storedValue.lastUpdatedBy !== clientId)) {
+          setSyncedValue(storedValue);
+          lastSyncTime.current = storedValue.lastSyncTime;
         }
       } catch (error) {
-        console.error('Error parsing stored data:', error);
+        console.error('Error syncing with storage:', error);
       }
-    }
+    };
+
+    // Set up periodic sync
+    const intervalId = setInterval(syncWithStorage, syncInterval);
     
-    // Setup storage event listener for localStorage fallback
-    const handleStorageChange = (e) => {
-      if (e.key === storageKey && e.newValue) {
-        try {
-          const data = JSON.parse(e.newValue);
-          if (data.sender !== clientId) {
-            processIncomingMessage(data);
-          }
-        } catch (error) {
-          console.error('Error parsing storage event data:', error);
-        }
+    // Set up storage event listener for immediate sync when another tab changes data
+    const handleStorageChange = (event) => {
+      if (event.key === storageKey) {
+        syncWithStorage();
       }
     };
     
     window.addEventListener('storage', handleStorageChange);
     
-    // Cleanup function
     return () => {
-      // Close BroadcastChannel
-      if (broadcastChannel) {
-        broadcastChannel.close();
-      }
-      
-      // Remove storage event listener
+      clearInterval(intervalId);
       window.removeEventListener('storage', handleStorageChange);
     };
-  }, [channelName, clientId, initialState, storageKey]);
-  
-  // Process incoming messages from other clients
-  const processIncomingMessage = useCallback((data) => {
-    if (data.type === 'state_update') {
-      setState(data.state);
-    } else if (data.type === 'request_state') {
-      // Another client is requesting the latest state
-      sendMessage({
-        type: 'state_response',
-        state: state,
-        timestamp: Date.now()
-      });
+  }, [storageKey, syncInterval, clientId]);
+
+  // Function to update the value
+  const updateValue = useCallback((newValue) => {
+    try {
+      // Ensure we have a valid object
+      if (!newValue) return;
+      
+      // Add sync metadata
+      const valueWithMeta = {
+        ...newValue,
+        lastSyncTime: Date.now(),
+        lastUpdatedBy: clientId
+      };
+      
+      // Update localStorage
+      saveToStorage(storageKey, valueWithMeta);
+      
+      // Update local state
+      setSyncedValue(valueWithMeta);
+      lastSyncTime.current = valueWithMeta.lastSyncTime;
+      lastUpdateTime.current = valueWithMeta.lastSyncTime;
+      
+      return valueWithMeta;
+    } catch (error) {
+      console.error('Error updating synced value:', error);
+      return null;
     }
-  }, [state]);
-  
-  // Send a message to other clients
-  const sendMessage = useCallback((message) => {
-    const messageWithMetadata = {
-      ...message,
-      sender: clientId,
-      timestamp: Date.now()
-    };
-    
-    // Try to use BroadcastChannel first
-    if (channel) {
-      channel.postMessage(messageWithMetadata);
-    }
-    
-    // Always use localStorage as fallback
-    localStorage.setItem(storageKey, JSON.stringify(messageWithMetadata));
-    
-    // Trigger storage event manually for same-tab communication
-    window.dispatchEvent(new StorageEvent('storage', {
-      key: storageKey,
-      newValue: JSON.stringify(messageWithMetadata)
-    }));
-  }, [channel, clientId, storageKey]);
-  
-  // Function to update the shared state
-  const updateState = useCallback((newState) => {
-    // If newState is a function, call it with the current state
-    const updatedState = typeof newState === 'function' 
-      ? newState(state) 
-      : newState;
-    
-    // Update local state
-    setState(updatedState);
-    
-    // Broadcast the update
-    sendMessage({
-      type: 'state_update',
-      state: updatedState
-    });
-  }, [state, sendMessage]);
-  
-  // Request latest state from other clients when we join
-  useEffect(() => {
-    if (channel) {
-      sendMessage({
-        type: 'request_state'
-      });
-    }
-  }, [channel, sendMessage]);
-  
-  return [state, updateState];
+  }, [storageKey, clientId]);
+
+  return [syncedValue, updateValue];
 };
 
 export default useMultiDevice;

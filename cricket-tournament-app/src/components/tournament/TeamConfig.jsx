@@ -1,110 +1,136 @@
-import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { useState, useEffect } from 'react';
+import { toast } from 'react-toastify';
+import { HexColorPicker } from 'react-colorful';
+import { Popover } from '@headlessui/react';
 
-const defaultColors = [
-  '#3b82f6', // blue-500
-  '#ef4444', // red-500
-  '#10b981', // emerald-500
-  '#f59e0b', // amber-500
-  '#8b5cf6', // violet-500
-  '#ec4899', // pink-500
-  '#6366f1', // indigo-500
-  '#f97316', // orange-500
-  '#14b8a6', // teal-500
-  '#84cc16', // lime-500
-];
+const TeamConfig = ({ numTeams, teams = [], onTeamsUpdate, teamBudget }) => {
+  const [localTeams, setLocalTeams] = useState([]);
 
-const TeamConfig = ({ numTeams, teams, onTeamsUpdate }) => {
-  const [teamsList, setTeamsList] = useState([]);
-
+  // Initialize teams if they don't exist yet
   useEffect(() => {
-    // Initialize teams if not already set
-    if (!teams || teams.length === 0) {
-      const initialTeams = Array(numTeams).fill().map((_, i) => ({
-        name: `Team ${i + 1}`,
-        color: defaultColors[i % defaultColors.length],
-        logo: null
+    if (teams.length === numTeams) {
+      // Teams are already configured, just make sure they have budgets
+      const updatedTeams = teams.map(team => ({
+        ...team,
+        budget: team.budget || parseFloat(teamBudget) // Ensure budget is set
       }));
-      setTeamsList(initialTeams);
-      onTeamsUpdate(initialTeams);
-    } else if (teams.length !== numTeams) {
-      // Adjust team count if needed
-      let newTeams = [...teams];
-      
-      if (teams.length < numTeams) {
-        // Add more teams
-        for (let i = teams.length; i < numTeams; i++) {
-          newTeams.push({
-            name: `Team ${i + 1}`,
-            color: defaultColors[i % defaultColors.length],
-            logo: null
-          });
-        }
-      } else {
-        // Remove extra teams
-        newTeams = newTeams.slice(0, numTeams);
-      }
-      
-      setTeamsList(newTeams);
-      onTeamsUpdate(newTeams);
+      setLocalTeams(updatedTeams);
     } else {
-      setTeamsList(teams);
+      // Create default teams
+      const newTeams = Array(numTeams).fill(null).map((_, index) => {
+        // Use existing team if available, otherwise create new
+        const existingTeam = teams[index];
+        if (existingTeam) {
+          return {
+            ...existingTeam,
+            budget: existingTeam.budget || parseFloat(teamBudget)
+          };
+        }
+        
+        return {
+          id: `team-${Date.now()}-${index}`,
+          name: `Team ${index + 1}`,
+          color: getRandomColor(),
+          budget: parseFloat(teamBudget) // Set the budget from the prop
+        };
+      });
+      setLocalTeams(newTeams);
+      onTeamsUpdate(newTeams); // Update parent state immediately
     }
-  }, [numTeams, teams, onTeamsUpdate]);
+  }, [numTeams, teams, teamBudget]);
 
-  const updateTeam = (index, field, value) => {
-    const updatedTeams = [...teamsList];
+  // Generate a random color
+  const getRandomColor = () => {
+    const colors = [
+      '#f44336', // Red
+      '#e91e63', // Pink
+      '#9c27b0', // Purple
+      '#673ab7', // Deep Purple
+      '#3f51b5', // Indigo
+      '#2196f3', // Blue
+      '#03a9f4', // Light Blue
+      '#00bcd4', // Cyan
+      '#009688', // Teal
+      '#4caf50', // Green
+      '#8bc34a', // Light Green
+      '#cddc39', // Lime
+      '#ffc107', // Amber
+      '#ff9800', // Orange
+      '#ff5722'  // Deep Orange
+    ];
+    return colors[Math.floor(Math.random() * colors.length)];
+  };
+
+  // Handle team updates
+  const handleTeamUpdate = (index, field, value) => {
+    const updatedTeams = [...localTeams];
     updatedTeams[index] = {
       ...updatedTeams[index],
-      [field]: value
+      [field]: value,
+      budget: parseFloat(teamBudget) // Ensure budget is always set
     };
-    setTeamsList(updatedTeams);
+    setLocalTeams(updatedTeams);
     onTeamsUpdate(updatedTeams);
   };
 
   return (
-    <div className="space-y-6">
-      <h3 className="text-2xl font-bold mb-6">Configure Teams</h3>
-      
-      <div className="space-y-6">
-        {teamsList.map((team, index) => (
-          <motion.div 
-            key={index}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: index * 0.1 }}
-            className="bg-slate-800 p-4 rounded-lg border border-slate-700"
+    <div>
+      <h3 className="text-2xl font-bold mb-6">Configure Your Teams</h3>
+      <div className="space-y-4">
+        {localTeams.map((team, index) => (
+          <div 
+            key={index} 
+            className="p-4 bg-slate-800 rounded-lg border border-slate-700 transition-all hover:border-blue-500"
           >
-            <div className="flex items-center space-x-4">
-              <div className="w-12 h-12 rounded-full flex items-center justify-center"
-                style={{ backgroundColor: team.color }}
-              >
-                <span className="text-white font-bold">
-                  {team.name.substring(0, 2)}
-                </span>
+            <div className="flex flex-col md:flex-row gap-4">
+              {/* Color picker */}
+              <div className="w-full md:w-1/6">
+                <label className="block text-sm font-medium text-blue-300 mb-2">Team Color</label>
+                <Popover className="relative">
+                  <Popover.Button className="w-full h-12 rounded cursor-pointer border-2 border-white"
+                    style={{ backgroundColor: team.color }}
+                  />
+                  
+                  <Popover.Panel className="absolute z-10 mt-2">
+                    <HexColorPicker 
+                      color={team.color} 
+                      onChange={(color) => handleTeamUpdate(index, 'color', color)} 
+                    />
+                  </Popover.Panel>
+                </Popover>
               </div>
               
-              <div className="flex-grow">
+              {/* Team name */}
+              <div className="flex-1">
+                <label className="block text-sm font-medium text-blue-300 mb-2">Team Name</label>
                 <input
                   type="text"
                   value={team.name}
-                  onChange={(e) => updateTeam(index, 'name', e.target.value)}
+                  onChange={(e) => handleTeamUpdate(index, 'name', e.target.value)}
                   placeholder="Team Name"
-                  className="w-full px-4 py-2 bg-slate-900 rounded-lg border border-slate-700 focus:border-blue-500 focus:ring-2 focus:ring-blue-500 outline-none transition text-white"
+                  className="w-full px-4 py-3 bg-slate-900 rounded-lg border border-slate-700 focus:border-blue-500 focus:ring-2 focus:ring-blue-500 outline-none transition text-white"
                 />
               </div>
               
-              <div>
+              {/* Team Budget (display only) */}
+              <div className="w-full md:w-1/4">
+                <label className="block text-sm font-medium text-blue-300 mb-2">Team Budget</label>
                 <input
-                  type="color"
-                  value={team.color}
-                  onChange={(e) => updateTeam(index, 'color', e.target.value)}
-                  className="w-10 h-10 rounded-full border-2 border-slate-600 cursor-pointer"
+                  type="text"
+                  value={`₹${team.budget} Cr`}
+                  disabled
+                  className="w-full px-4 py-3 bg-slate-900 rounded-lg border border-slate-700 text-white opacity-70"
                 />
               </div>
             </div>
-          </motion.div>
+          </div>
         ))}
+      </div>
+      
+      <div className="mt-6 p-4 bg-blue-900 bg-opacity-30 border border-blue-800 rounded-lg">
+        <p className="text-blue-300 text-sm">
+          <span className="font-bold">Tip:</span> Give your teams distinctive colors and meaningful names to make your tournament more engaging!
+        </p>
       </div>
     </div>
   );

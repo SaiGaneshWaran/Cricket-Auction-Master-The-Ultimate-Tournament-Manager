@@ -1,258 +1,276 @@
-// Constants
-const TOURNAMENT_PREFIX = 'cricket_tournament_';
-const TOURNAMENTS_INDEX = 'cricket_tournaments_index';
+// src/utils/storage.js
+
+// Define constants
+const TOURNAMENT_KEY = 'cricket_tournaments';
+const DEV_SHARED_KEY = 'cross_origin_tournaments';
 
 /**
- * Save a tournament to localStorage
- * @param {string} tournamentId - The tournament ID
- * @param {Object} tournamentData - The tournament data to save
+ * Save data to localStorage with optional expiration
+ * @param {string} key - The storage key
+ * @param {any} data - The data to save
+ * @param {number} expirationInMinutes - Optional expiration time in minutes
+ * @returns {boolean} Success status
  */
-export const saveTournamentToStorage = (tournamentId, tournamentData) => {
+export const saveToStorage = (key, data, expirationInMinutes = null) => {
   try {
-    // Check if we're in a browser environment
-    if (typeof localStorage === 'undefined') {
-      console.warn('localStorage is not available');
-      return;
-    }
-    
-    // Save tournament data
-    localStorage.setItem(
-      `${TOURNAMENT_PREFIX}${tournamentId}`, 
-      JSON.stringify(tournamentData)
-    );
-    
-    // Update tournaments index
-    const index = getTournamentsIndex();
-    if (!index.includes(tournamentId)) {
-      index.push(tournamentId);
-      localStorage.setItem(TOURNAMENTS_INDEX, JSON.stringify(index));
-    }
-  } catch (error) {
-    console.error('Error saving tournament to storage:', error);
-    throw new Error('Failed to save tournament data locally');
-  }
-};
-
-/**
- * Get a tournament from localStorage
- * @param {string} tournamentId - The tournament ID
- * @returns {Object} The tournament data
- */
-export const getTournamentFromStorage = (tournamentId) => {
-  try {
-    // Check if we're in a browser environment
-    if (typeof localStorage === 'undefined') {
-      console.warn('localStorage is not available');
-      return null;
-    }
-    
-    const data = localStorage.getItem(`${TOURNAMENT_PREFIX}${tournamentId}`);
-    
-    if (!data) {
-      return null;
-    }
-    
-    return JSON.parse(data);
-  } catch (error) {
-    console.error('Error getting tournament from storage:', error);
-    throw new Error('Failed to retrieve tournament data');
-  }
-};
-
-/**
- * Get all tournaments from localStorage
- * @returns {Object} Map of tournament IDs to tournament data
- */
-export const getAllTournamentsFromStorage = () => {
-  try {
-    // Check if we're in a browser environment
-    if (typeof localStorage === 'undefined') {
-      console.warn('localStorage is not available');
-      return {};
-    }
-    
-    const index = getTournamentsIndex();
-    const tournaments = {};
-    
-    index.forEach(id => {
-      const tournament = getTournamentFromStorage(id);
-      if (tournament) {
-        tournaments[id] = tournament;
-      }
-    });
-    
-    return tournaments;
-  } catch (error) {
-    console.error('Error getting all tournaments from storage:', error);
-    throw new Error('Failed to retrieve tournament data');
-  }
-};
-
-/**
- * Delete a tournament from localStorage
- * @param {string} tournamentId - The tournament ID
- */
-export const deleteTournamentFromStorage = (tournamentId) => {
-  try {
-    // Check if we're in a browser environment
-    if (typeof localStorage === 'undefined') {
-      console.warn('localStorage is not available');
-      return;
-    }
-    
-    // Remove tournament data
-    localStorage.removeItem(`${TOURNAMENT_PREFIX}${tournamentId}`);
-    
-    // Update tournaments index
-    const index = getTournamentsIndex();
-    const newIndex = index.filter(id => id !== tournamentId);
-    localStorage.setItem(TOURNAMENTS_INDEX, JSON.stringify(newIndex));
-  } catch (error) {
-    console.error('Error deleting tournament from storage:', error);
-    throw new Error('Failed to delete tournament data');
-  }
-};
-
-/**
- * Get the index of tournaments from localStorage
- * @returns {Array} Array of tournament IDs
- */
-export const getTournamentsIndex = () => {
-  try {
-    // Check if we're in a browser environment
-    if (typeof localStorage === 'undefined') {
-      console.warn('localStorage is not available');
-      return [];
-    }
-    
-    const index = localStorage.getItem(TOURNAMENTS_INDEX);
-    
-    if (!index) {
-      return [];
-    }
-    
-    return JSON.parse(index);
-  } catch (error) {
-    console.error('Error getting tournaments index from storage:', error);
-    throw new Error('Failed to retrieve tournaments index');
-  }
-};
-
-/**
- * Clear all tournament data from localStorage
- */
-export const clearAllTournamentsFromStorage = () => {
-  try {
-    // Check if we're in a browser environment
-    if (typeof localStorage === 'undefined') {
-      console.warn('localStorage is not available');
-      return;
-    }
-    
-    const index = getTournamentsIndex();
-    
-    // Remove all tournament data
-    index.forEach(id => {
-      localStorage.removeItem(`${TOURNAMENT_PREFIX}${id}`);
-    });
-    
-    // Clear index
-    localStorage.removeItem(TOURNAMENTS_INDEX);
-  } catch (error) {
-    console.error('Error clearing all tournaments from storage:', error);
-    throw new Error('Failed to clear tournament data');
-  }
-};
-
-/**
- * Get the total storage usage for all tournament data
- * @returns {Object} Storage usage information
- */
-export const getTournamentStorageUsage = () => {
-  try {
-    // Check if we're in a browser environment
-    if (typeof localStorage === 'undefined') {
-      console.warn('localStorage is not available');
-      return { total: 0, tournaments: {} };
-    }
-    
-    const index = getTournamentsIndex();
-    const usage = {
-      total: 0,
-      tournaments: {}
+    // Add expiration timestamp if provided
+    const storageObject = {
+      data,
+      timestamp: Date.now(),
+      expiration: expirationInMinutes ? Date.now() + expirationInMinutes * 60 * 1000 : null
     };
     
-    // Calculate storage for each tournament
-    index.forEach(id => {
-      const key = `${TOURNAMENT_PREFIX}${id}`;
-      const data = localStorage.getItem(key);
-      
-      if (data) {
-        const size = new Blob([data]).size;
-        usage.tournaments[id] = size;
-        usage.total += size;
+    // Stringify and save
+    localStorage.setItem(key, JSON.stringify(storageObject));
+    
+    // For tournament data in development mode, also save to sessionStorage for cross-domain access
+    if (process.env.NODE_ENV === 'development' && key === TOURNAMENT_KEY) {
+      try {
+        sessionStorage.setItem(DEV_SHARED_KEY, JSON.stringify({
+          data,
+          timestamp: Date.now(),
+          sharedFromOrigin: window.location.origin
+        }));
+        console.log('Saved tournament data to shared storage for cross-origin access');
+      } catch (err) {
+        console.warn('Failed to save to session storage for cross-origin access', err);
       }
-    });
-    
-    return usage;
-  } catch (error) {
-    console.error('Error calculating tournament storage usage:', error);
-    throw new Error('Failed to calculate storage usage');
-  }
-};
-
-/**
- * Check if localStorage is available and has sufficient space
- * @param {number} requiredSpace - Required space in bytes
- * @returns {boolean} True if storage is available and has sufficient space
- */
-export const hasStorageAvailable = (requiredSpace = 5242880) => { // Default 5MB
-  try {
-    // Check if we're in a browser environment
-    if (typeof localStorage === 'undefined') {
-      return false;
     }
     
-    // Test if we can use localStorage
-    const testKey = '__test__';
-    localStorage.setItem(testKey, testKey);
-    const testResult = localStorage.getItem(testKey);
-    localStorage.removeItem(testKey);
-    
-    if (testResult !== testKey) {
-      return false;
-    }
-    
-    // Check if we have enough space
-    const estimateAvailable = 5242880; // Estimate 5MB
-    
-    // A more accurate way would be to try storing data incrementally 
-    // until we hit the limit, but that's complex and not always reliable
-    
-    return estimateAvailable >= requiredSpace;
+    return true;
   } catch (error) {
-    console.error('Error checking storage availability:', error);
+    console.error(`Error saving to localStorage (${key}):`, error);
     return false;
   }
 };
 
-// Add these general storage functions to your existing storage.js
+/**
+ * Get data from localStorage
+ * @param {string} key - The storage key
+ * @param {any} defaultValue - Default value if not found or expired
+ * @returns {any} The stored data or defaultValue
+ */
 export const getFromStorage = (key, defaultValue = null) => {
   try {
-    const item = localStorage.getItem(key);
-    return item ? JSON.parse(item) : defaultValue;
+    // Get from localStorage
+    const storedItem = localStorage.getItem(key);
+    let resultData = defaultValue;
+    
+    if (storedItem) {
+      // Parse the stored object
+      const storageObject = JSON.parse(storedItem);
+      
+      // Check expiration if set
+      if (storageObject.expiration && storageObject.expiration < Date.now()) {
+        localStorage.removeItem(key);
+      } else {
+        resultData = storageObject.data;
+      }
+    }
+    
+    // For tournament data in development, also check sessionStorage for cross-origin data
+    if (process.env.NODE_ENV === 'development' && key === TOURNAMENT_KEY) {
+      try {
+        const sharedItem = sessionStorage.getItem(DEV_SHARED_KEY);
+        if (sharedItem) {
+          const sharedObject = JSON.parse(sharedItem);
+          
+          // If shared data exists and is from a different origin, merge with local data
+          if (sharedObject.sharedFromOrigin && sharedObject.sharedFromOrigin !== window.location.origin) {
+            // Get data from shared storage
+            const sharedData = sharedObject.data || {};
+            
+            // If result is an object (tournaments), merge with local
+            if (resultData && typeof resultData === 'object' && !Array.isArray(resultData)) {
+              resultData = { ...resultData, ...sharedData };
+              console.log('Merged tournaments from shared storage');
+            } 
+            // If no local data, use shared data
+            else if (resultData === defaultValue) {
+              resultData = sharedData;
+              console.log('Using tournaments from shared storage');
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to read from shared storage', err);
+      }
+    }
+    
+    return resultData;
   } catch (error) {
-    console.error('Error reading from localStorage:', error);
+    console.error(`Error retrieving from localStorage (${key}):`, error);
     return defaultValue;
   }
 };
 
-export const saveToStorage = (key, data) => {
+/**
+ * Remove data from localStorage
+ * @param {string} key - The storage key
+ * @returns {boolean} Success status
+ */
+export const removeFromStorage = (key) => {
   try {
-    localStorage.setItem(key, JSON.stringify(data));
+    localStorage.removeItem(key);
     return true;
   } catch (error) {
-    console.error('Error saving to localStorage:', error);
+    console.error(`Error removing from localStorage (${key}):`, error);
     return false;
   }
+};
+
+/**
+ * Clear all data from localStorage
+ * @returns {boolean} Success status
+ */
+export const clearStorage = () => {
+  try {
+    localStorage.clear();
+    return true;
+  } catch (error) {
+    console.error('Error clearing localStorage:', error);
+    return false;
+  }
+};
+
+/**
+ * Get all storage keys that match a prefix
+ * @param {string} prefix - The key prefix to match
+ * @returns {Array} Array of matching keys
+ */
+export const getStorageKeys = (prefix = '') => {
+  const keys = [];
+  
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key.startsWith(prefix)) {
+        keys.push(key);
+      }
+    }
+  } catch (error) {
+    console.error(`Error getting localStorage keys with prefix (${prefix}):`, error);
+  }
+  
+  return keys;
+};
+
+/**
+ * Check if a key exists in localStorage
+ * @param {string} key - The storage key
+ * @returns {boolean} True if key exists
+ */
+export const hasStorageKey = (key) => {
+  try {
+    return localStorage.getItem(key) !== null;
+  } catch (error) {
+    console.error(`Error checking localStorage key (${key}):`, error);
+    return false;
+  }
+};
+
+/**
+ * Get single tournament by ID - Fixed to use correct key
+ * @param {string} tournamentId - The tournament ID
+ * @returns {object|null} Tournament object or null if not found
+ */
+export const getSingleTournament = (tournamentId) => {
+  try {
+    // Use the proper tournament key and our getFromStorage function
+    const tournaments = getFromStorage(TOURNAMENT_KEY, {});
+    return tournaments[tournamentId] || null;
+  } catch (error) {
+    console.error('Error getting tournament from storage:', error);
+    return null;
+  }
+};
+
+/**
+ * Export tournament data for sharing between devices/ports
+ * @param {string} tournamentId - The tournament ID to export
+ * @returns {string} Shareable code containing tournament data
+ */
+export const exportTournamentCode = (tournamentId) => {
+  try {
+    const tournaments = getFromStorage(TOURNAMENT_KEY, {});
+    const tournament = tournaments[tournamentId];
+    if (!tournament) {
+      throw new Error('Tournament not found');
+    }
+    
+    // Create a shareable data packet with only essential information
+    const exportData = {
+      id: tournament.id,
+      captainCode: tournament.captainCode,
+      viewerCode: tournament.viewerCode,
+      name: tournament.name,
+      fullData: tournament
+    };
+    
+    // Encode to base64 for easier sharing
+    return btoa(JSON.stringify(exportData));
+  } catch (error) {
+    console.error('Error exporting tournament:', error);
+    throw new Error('Failed to export tournament');
+  }
+};
+
+/**
+ * Import tournament data from a shared code
+ * @param {string} code - The exported tournament code
+ * @returns {object} The imported tournament's ID and name
+ */
+export const importTournamentCode = (code) => {
+  try {
+    // Decode from base64
+    const importData = JSON.parse(atob(code));
+    
+    // Validate import data
+    if (!importData.id || !importData.fullData) {
+      throw new Error('Invalid tournament import data');
+    }
+    
+    // Get current tournaments
+    const tournaments = getFromStorage(TOURNAMENT_KEY, {});
+    
+    // Add the imported tournament
+    tournaments[importData.id] = importData.fullData;
+    
+    // Save back to storage
+    saveToStorage(TOURNAMENT_KEY, tournaments);
+    
+    // Also save to shared storage for other tabs/ports
+    if (process.env.NODE_ENV === 'development') {
+      try {
+        sessionStorage.setItem(DEV_SHARED_KEY, JSON.stringify({
+          data: tournaments,
+          timestamp: Date.now(),
+          sharedFromOrigin: window.location.origin
+        }));
+      } catch (err) {
+        console.warn('Failed to save to session storage', err);
+      }
+    }
+    
+    return {
+      id: importData.id,
+      name: importData.name || 'Imported Tournament'
+    };
+  } catch (error) {
+    console.error('Error importing tournament:', error);
+    throw new Error('Invalid tournament code');
+  }
+};
+
+export default {
+  saveToStorage,
+  getFromStorage,
+  removeFromStorage,
+  clearStorage,
+  getStorageKeys,
+  hasStorageKey,
+  getSingleTournament,
+  exportTournamentCode,
+  importTournamentCode,
+  TOURNAMENT_KEY
 };

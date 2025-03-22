@@ -1,117 +1,116 @@
-import { motion } from 'framer-motion';
-import { formatCurrency } from '../../utils/helpers';
-import Card from '../common/Card';
+import React from 'react';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Paper,
+  Chip,
+  Box,
+  Typography,
+  Avatar
+} from '@mui/material';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 
-const OtherTeamsTable = ({ teams, teamBalances, currentTeam, currentBidder }) => {
-  if (!teams || !teamBalances) return null;
-  
-  // Sort teams by remaining budget (highest first)
-  const sortedTeams = [...teams].sort((a, b) => {
-    const balanceA = teamBalances[a.id]?.remaining || 0;
-    const balanceB = teamBalances[b.id]?.remaining || 0;
-    return balanceB - balanceA;
-  });
-  
-  return (
-    <Card variant="glass" className="p-4">
-      <h3 className="text-lg font-bold text-white mb-4">All Teams</h3>
-      
-      <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
-        {sortedTeams.map(team => {
-          const isCurrentTeam = currentTeam && team.id === currentTeam.id;
-          const isCurrentBidder = team.id === currentBidder;
-          const balance = teamBalances[team.id] || {
-            totalBudget: 0,
-            spent: 0,
-            remaining: 0,
-            players: []
-          };
-          
-          return (
-            <motion.div
-              key={team.id}
-              className={`
-                relative rounded-lg overflow-hidden
-                ${isCurrentTeam ? 'border-2 border-blue-500' : 'border border-blue-900'}
-                ${isCurrentBidder ? 'bg-indigo-900' : 'bg-blue-900 bg-opacity-40'}
-              `}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3 }}
-            >
-              {isCurrentBidder && (
-                <div className="absolute top-0 right-0 bg-yellow-500 text-gray-900 text-xs font-bold px-2 py-1 rounded-bl-lg">
-                  Bidding
-                </div>
-              )}
-              
-              <div className="p-3">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center space-x-2">
-                    <div
-                      className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold text-white"
-                      style={{ backgroundColor: team.color }}
-                    >
-                      {team.name.charAt(0)}
-                    </div>
-                    <h4 className="font-medium text-white">{team.name}</h4>
-                  </div>
-                  
-                  <div className="text-right">
-                    <p className="text-xs text-blue-300">Remaining</p>
-                    <p className="text-sm font-bold text-white">{formatCurrency(balance.remaining)}</p>
-                  </div>
-                </div>
-                
-                <div className="relative h-2 bg-blue-900 rounded-full overflow-hidden">
-                  <div 
-                    className="absolute top-0 left-0 h-full bg-gradient-to-r from-yellow-500 to-green-500"
-                    style={{ 
-                      width: `${(balance.remaining / balance.totalBudget) * 100}%`,
-                    }}
-                  ></div>
-                </div>
-                
-                <div className="mt-2 flex justify-between items-center text-xs">
-                  <span className="text-blue-300">Players: {balance.players.length}</span>
-                  <span className="text-blue-300">Spent: {formatCurrency(balance.spent)}</span>
-                </div>
-              </div>
-              
-              {/* Player summary by role */}
-              <div className="bg-blue-900 bg-opacity-50 px-3 py-2 flex justify-between">
-                {['batsman', 'bowler', 'allRounder', 'wicketKeeper'].map(role => {
-                  const count = balance.players.filter(p => p.role === role).length;
-                  return (
-                    <div key={role} className="text-center">
-                      <p className="text-xs text-blue-300">{getRoleShortcode(role)}</p>
-                      <p className="text-sm font-medium text-white">{count}</p>
-                    </div>
-                  );
-                })}
-              </div>
-            </motion.div>
-          );
-        })}
-      </div>
-    </Card>
-  );
-};
-
-// Helper function to get role shortcodes
-const getRoleShortcode = (role) => {
-  switch (role) {
-    case 'batsman':
-      return 'BAT';
-    case 'bowler':
-      return 'BWL';
-    case 'allRounder':
-      return 'ALL';
-    case 'wicketKeeper':
-      return 'WK';
-    default:
-      return role;
+const OtherTeamsTable = ({ teams = [], teamBalances = {}, currentTeam = null, currentBidder = null }) => {
+  // Safely handle teams being undefined or not an array
+  if (!teams || !Array.isArray(teams) || teams.length === 0) {
+    return (
+      <Typography variant="body2" color="text.secondary" sx={{ p: 2, textAlign: 'center' }}>
+        No team information available
+      </Typography>
+    );
   }
+
+  return (
+    <TableContainer component={Paper} variant="outlined" sx={{ maxHeight: 300, overflow: 'auto' }}>
+      <Table size="small" stickyHeader>
+        <TableHead>
+          <TableRow>
+            <TableCell>Team</TableCell>
+            <TableCell align="right">Remaining</TableCell>
+            <TableCell align="right">Players</TableCell>
+            <TableCell align="right">Status</TableCell>
+          </TableRow>
+        </TableHead>
+        <TableBody>
+          {teams.map((team) => {
+            // Skip if team is null/undefined or missing id
+            if (!team || !team.id) return null;
+            
+            const isCurrentTeam = currentTeam && team.id === currentTeam.id;
+            const isCurrentBidder = team.id === currentBidder;
+            
+            // Safely get team balance or default values
+            const balance = teamBalances[team.id] || { 
+              remaining: team.budget || 0, 
+              spent: 0, 
+              players: [] 
+            };
+            
+            const playersCount = Array.isArray(balance.players) ? balance.players.length : 0;
+            
+            return (
+              <TableRow 
+                key={team.id}
+                sx={{ 
+                  bgcolor: isCurrentTeam ? 'rgba(25, 118, 210, 0.08)' : undefined,
+                  '&:hover': { bgcolor: 'rgba(0, 0, 0, 0.04)' }
+                }}
+              >
+                <TableCell>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Avatar 
+                      sx={{ 
+                        width: 24, 
+                        height: 24, 
+                        bgcolor: team.color || 'primary.main',
+                        fontSize: '0.75rem'
+                      }}
+                    >
+                      {team.name ? team.name.charAt(0) : '?'}
+                    </Avatar>
+                    <Typography variant="body2" fontWeight={isCurrentBidder ? 'bold' : 'normal'}>
+                      {team.name}
+                      {isCurrentBidder && (
+                        <CheckCircleIcon 
+                          color="success" 
+                          fontSize="small" 
+                          sx={{ ml: 0.5, verticalAlign: 'middle' }} 
+                        />
+                      )}
+                    </Typography>
+                  </Box>
+                </TableCell>
+                <TableCell align="right">
+                  <Typography 
+                    variant="body2" 
+                    fontWeight="medium"
+                    color={balance.remaining < 50000 ? 'error' : 'text.primary'}
+                  >
+                    ₹{balance.remaining?.toLocaleString() || 0}
+                  </Typography>
+                </TableCell>
+                <TableCell align="right">
+                  {playersCount}
+                </TableCell>
+                <TableCell align="right">
+                  <Chip
+                    label={isCurrentBidder ? "Bidding" : "Waiting"} 
+                    color={isCurrentBidder ? "success" : "default"}
+                    size="small"
+                    sx={{ fontSize: '0.7rem', height: 20 }}
+                  />
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
+    </TableContainer>
+  );
 };
 
 export default OtherTeamsTable;

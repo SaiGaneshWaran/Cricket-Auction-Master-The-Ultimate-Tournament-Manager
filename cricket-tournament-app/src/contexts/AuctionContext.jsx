@@ -1,386 +1,358 @@
-import { createContext, useState, useContext, useEffect, useCallback, useMemo } from 'react';
-import { toast } from 'react-toastify';
-import { useTournament } from './TournamentContext';
-import { generateUniqueId } from '../utils/helpers';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import auctionService from '../services/auctionService';
 
-// Create context
 const AuctionContext = createContext();
 
-export const useAuction = () => useContext(AuctionContext);
-
-export const AuctionProvider = ({ children }) => {
-  const { currentTournament } = useTournament();
+export function AuctionProvider({ children }) {
   const [currentAuction, setCurrentAuction] = useState(null);
   const [currentPlayer, setCurrentPlayer] = useState(null);
   const [currentBid, setCurrentBid] = useState(0);
   const [currentBidder, setCurrentBidder] = useState(null);
-  const [timer, setTimer] = useState(15);
+  const [timer, setTimer] = useState(15); // 15 seconds default
   const [isTimerRunning, setIsTimerRunning] = useState(false);
   const [auctionHistory, setAuctionHistory] = useState([]);
-  const [remainingPlayers, setRemainingPlayers] = useState([]);
-  const [soldPlayers, setSoldPlayers] = useState([]);
   const [teamBalances, setTeamBalances] = useState({});
   const [isAuctionActive, setIsAuctionActive] = useState(false);
+  const [isInitialized, setIsInitialized] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
-
-  const auctionData = useMemo(() => {
-    if (!currentTournament) return null;
-    
-    return {
-      tournamentId: currentTournament.id,
-      teams: currentTournament.teams,
-      players: currentTournament.playerPool
-    };
-  }, [currentTournament]);
-
-  
-
-
-  // Initialize auction state from tournament data
-  const initializeAuction = (tournamentData) => {
+  // Initialize auction state
+  const initializeAuctionState = useCallback(async (tournament) => {
     try {
-      const auction = tournamentData.auction;
+      console.log('Initializing auction state for tournament:', tournament.id);
+      setLoading(true);
       
-      setCurrentAuction({
-        tournamentId: tournamentData.id,
-        teams: tournamentData.teams,
-        status: tournamentData.status
-      });
+      // Initialize or get auction
+      let auctionData = auctionService.getAuctionByTournamentId(tournament.id);
       
-      setCurrentPlayer(auction.currentPlayer);
-      setCurrentBid(auction.currentBid || 0);
-      setCurrentBidder(auction.currentBidder);
-      setTimer(auction.timer || 15);
-      setAuctionHistory(auction.history || []);
+      if (!auctionData) {
+        console.log('No existing auction found, creating new one');
+        auctionData = await auctionService.initializeAuction(tournament);
+      } else {
+        console.log('Found existing auction:', auctionData.id);
+      }
       
-      // Initialize remaining players and sold players
-      const allPlayers = tournamentData.players || [];
-      const sold = allPlayers.filter(p => p.team);
-      const remaining = allPlayers.filter(p => !p.team);
+      // Set auction state
+      setCurrentAuction(auctionData);
+      setCurrentPlayer(auctionData.currentPlayer);
       
-      setRemainingPlayers(remaining);
-      setSoldPlayers(sold);
+      // Set current bid
+      if (auctionData.currentPlayer) {
+        const basePrice = auctionData.currentPlayer.basePrice || 100000;
+        const currentBid = auctionData.currentPlayer.currentBid || basePrice;
+        setCurrentBid(currentBid);
+        setCurrentBidder(auctionData.currentPlayer.currentBidder);
+      }
       
-      // Initialize team balances
-      const balances = {};
-      tournamentData.teams.forEach(team => {
-        const teamPlayers = sold.filter(p => p.team === team.id);
-        const spentAmount = teamPlayers.reduce((total, p) => total + p.soldPrice, 0);
-        balances[team.id] = {
-          totalBudget: tournamentData.teamBudget,
-          spent: spentAmount,
-          remaining: tournamentData.teamBudget - spentAmount,
-          players: teamPlayers
-        };
-      });
+      // Set history
+      setAuctionHistory(auctionData.history || []);
       
+      // Calculate team balances
+      const balances = calculateTeamBalances(auctionData);
       setTeamBalances(balances);
       
-      // Set auction active if status is 'auction'
-      setIsAuctionActive(tournamentData.status === 'auction');
-    } catch (error) {
-      console.error('Error initializing auction:', error);
-      toast.error('Failed to initialize auction. Please try again.');
+      // Set auction activity
+      setIsAuctionActive(auctionData.status === 'active');
+      setTimer(15); // Reset timer to 15 seconds
+      
+      // Set initialization flag
+      setIsInitialized(true);
+      
+      console.log('Auction initialization complete');
+      setLoading(false);
+      return auctionData;
+    } catch (err) {
+      console.error('Error initializing auction state:', err);
+      setError(err.message || 'Failed to initialize auction');
+      setLoading(false);
+      throw err;
     }
-  };
+  }, []);
 
-  // Timer effect
-  useEffect(() => {
-    let interval;
+  // Calculate team balances
+  const calculateTeamBalances = useCallback((auction) => {
+    const balances = {};
     
-    if (isTimerRunning && timer > 0) {
-      interval = setInterval(() => {
-        setTimer(prev => prev - 1);
-      }, 1000);
-    } else if (isTimerRunning && timer === 0) {
-      // Time's up, complete the bid
-      completeBid();
-    }
+    if (!auction || !auction.teams) return balances;
     
-    return () => clearInterval(interval);
-  }, [isTimerRunning, timer]);
+    auction.teams.forEach(team => {
+      // Initial budget from team definition
+      const totalBudget = team.budget || 10000000; // Default 1 crore
+      
+      // Calculate spent amount from team's players
+      const spent = (team.players || []).reduce((sum, player) => {
+        return sum + (player.price || 0);
+      }, 0);
+      
+      // Store in balances object
+      balances[team.id] = {
+        total: totalBudget,
+        spent: spent,
+        remaining: totalBudget - spent
+      };
+    });
+    
+    return balances;
+  }, []);
 
-  // Start the timer
-  const startTimer = () => {
-    setIsTimerRunning(true);
-  };
-
-  // Pause the timer
-  const pauseTimer = () => {
-    setIsTimerRunning(false);
-  };
-
-  // Reset the timer
-  const resetTimer = (seconds = 15) => {
-    setTimer(seconds);
-    setIsTimerRunning(false);
-  };
-
-  // Place a bid
-  const placeBid = (teamId, bidAmount) => {
+  // Refresh auction data
+  const refreshAuction = useCallback(async (auctionId) => {
     try {
-      if (!isAuctionActive) {
-        throw new Error('Auction is not active');
-      }
-      
-      if (!currentPlayer) {
-        throw new Error('No player available for bidding');
-      }
-      
-      // Validate bid amount
-      if (bidAmount <= currentBid) {
-        throw new Error('Bid amount must be higher than current bid');
-      }
-      
-      // Check if team has enough budget
-      const teamBalance = teamBalances[teamId];
-      if (!teamBalance) {
-        throw new Error('Team not found');
-      }
-      
-      if (bidAmount > teamBalance.remaining) {
-        throw new Error('Not enough budget to place this bid');
-      }
+      const auctionData = auctionService.getAuctionById(auctionId);
+      if (!auctionData) throw new Error('Auction not found');
       
       // Update state
-      setCurrentBid(bidAmount);
-      setCurrentBidder(teamId);
+      setCurrentAuction(auctionData);
+      setCurrentPlayer(auctionData.currentPlayer);
       
-      // Reset timer
-      resetTimer();
-      startTimer();
+      if (auctionData.currentPlayer) {
+        const basePrice = auctionData.currentPlayer.basePrice || 100000;
+        const currentBid = auctionData.currentPlayer.currentBid || basePrice;
+        setCurrentBid(currentBid);
+        setCurrentBidder(auctionData.currentPlayer.currentBidder);
+      }
       
-      // Add bid to history
-      const newBid = {
-        id: generateUniqueId(),
-        playerId: currentPlayer.id,
+      setAuctionHistory(auctionData.history || []);
+      
+      const balances = calculateTeamBalances(auctionData);
+      setTeamBalances(balances);
+      
+      setIsAuctionActive(auctionData.status === 'active');
+      
+      return auctionData;
+    } catch (err) {
+      console.error('Error refreshing auction:', err);
+      throw err;
+    }
+  }, [calculateTeamBalances]);
+
+  // Start auction
+  const startAuction = useCallback(async (auctionId) => {
+    try {
+      const updatedAuction = await auctionService.startAuction(auctionId);
+      await refreshAuction(auctionId);
+      setIsAuctionActive(true);
+      return updatedAuction;
+    } catch (err) {
+      console.error('Error starting auction:', err);
+      throw err;
+    }
+  }, [refreshAuction]);
+
+  // Place bid
+  const placeBid = useCallback(async (teamId, amount, forceAccept = false) => {
+    try {
+      if (!currentAuction || !currentPlayer) {
+        throw new Error('Auction or player not available');
+      }
+      
+      // Validate bid
+      if (!forceAccept) {
+        // Check if bid is higher than current bid
+        if (amount <= currentBid) {
+          throw new Error('Bid must be higher than current bid');
+        }
+        
+        // Check if team has enough budget
+        const teamBalance = teamBalances[teamId];
+        if (teamBalance && amount > teamBalance.remaining) {
+          throw new Error('Bid exceeds team budget');
+        }
+      }
+      
+      // Place bid
+      const updatedAuction = await auctionService.placeBid(
+        currentAuction.id,
+        currentPlayer.id,
         teamId,
-        amount: bidAmount,
-        timestamp: new Date().toISOString()
+        amount
+      );
+      
+      
+      // Update state
+      setCurrentBid(amount);
+      setCurrentBidder(teamId);
+      setTimer(15); // Reset timer when new bid is placed
+      
+      // Add to history
+     // Updated placeBid function (partial update)
+
+// Inside the placeBid function, update the bidEvent creation:
+const playerName = currentPlayer?.name || 
+currentPlayer?.fullName || 
+currentPlayer?.firstName ||
+"Unknown Player";
+
+// Add to history with more complete information
+const bidEvent = {
+id: `history-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+type: 'bid',
+playerId: currentPlayer.id,
+playerName: playerName,
+player: { ...currentPlayer, name: playerName }, // Include full player object
+teamId,
+amount,
+timestamp: Date.now()
+};
+
+setAuctionHistory(prev => [bidEvent, ...prev]);
+      
+      setAuctionHistory(prev => [bidEvent, ...prev]);
+      
+      // Refresh auction
+      await refreshAuction(currentAuction.id);
+      
+      return updatedAuction;
+    } catch (err) {
+      console.error('Error placing bid:', err);
+      throw err;
+    }
+  }, [currentAuction, currentPlayer, currentBid, teamBalances, refreshAuction]);
+
+  // Complete bid
+  const completeBid = useCallback(async () => {
+    try {
+      if (!currentAuction) {
+        throw new Error('Auction not available');
+      }
+      
+      // Ensure we have a proper player name, with fallbacks
+      const playerName = currentPlayer?.name || 
+                         currentPlayer?.fullName || 
+                         currentPlayer?.firstName ||
+                         "Unknown Player";
+      
+      // Complete player auction
+      const updatedAuction = await auctionService.completePlayerAuction(currentAuction.id);
+      
+      // Create a more complete history event object
+      const historyEvent = {
+        id: `history-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        type: currentBidder ? 'sold' : 'unsold',
+        playerId: currentPlayer?.id,
+        playerName: playerName, // Use our robust player name
+        player: { ...currentPlayer, name: playerName }, // Include full player object for reference
+        teamId: currentBidder,
+        amount: currentBid,
+        timestamp: Date.now()
       };
       
-      setAuctionHistory(prev => [...prev, newBid]);
-      
-      return newBid;
-    } catch (error) {
-      console.error('Error placing bid:', error);
-      toast.error(error.message || 'Failed to place bid');
-      throw error;
-    }
-  };
-
-  // Complete the current bid
-  const completeBid = () => {
-    try {
-      if (!isAuctionActive) {
-        throw new Error('Auction is not active');
-      }
-      
-      if (!currentPlayer) {
-        throw new Error('No player available for bidding');
-      }
-      
-      // Pause timer
-      pauseTimer();
-      
-      const soldPlayer = {
-        ...currentPlayer,
-        team: currentBidder,
-        soldPrice: currentBid,
-        soldAt: new Date().toISOString()
-      };
-      
-      // Update sold players list
-      setSoldPlayers(prev => [...prev, soldPlayer]);
-      
-      // Update remaining players list
-      setRemainingPlayers(prev => prev.filter(p => p.id !== currentPlayer.id));
-      
-      // Update team balance
-      if (currentBidder) {
-        setTeamBalances(prev => {
-          const team = prev[currentBidder];
-          return {
-            ...prev,
-            [currentBidder]: {
-              ...team,
-              spent: team.spent + currentBid,
-              remaining: team.remaining - currentBid,
-              players: [...team.players, soldPlayer]
-            }
-          };
-        });
-      }
-      
-      // Move to next player if available
-      const nextPlayer = getNextPlayer();
-      if (nextPlayer) {
-        setCurrentPlayer(nextPlayer);
-        setCurrentBid(nextPlayer.basePrice);
-        setCurrentBidder(null);
+      // Check for duplicates before adding to history
+      setAuctionHistory(prev => {
+        // Look for any recent duplicate events (same player + type combination)
+        const isDuplicate = prev.some(item => 
+          item.type === historyEvent.type && 
+          item.playerId === historyEvent.playerId &&
+          Date.now() - item.timestamp < 10000 // Within last 10 seconds
+        );
         
-        // Reset timer
-        resetTimer();
+        // Only add if not a duplicate
+        return isDuplicate ? prev : [historyEvent, ...prev];
+      });
+      
+      // If this was a successful bid, update the team balances
+      if (currentBidder && currentBid > 0) {
+        // You might have code here to update team balances
+        console.log(`Player ${playerName} sold to team ${currentBidder} for ₹${currentBid}`);
       } else {
-        // End auction if no more players
-        setIsAuctionActive(false);
-        setCurrentPlayer(null);
-        setCurrentBid(0);
-        setCurrentBidder(null);
+        console.log(`Player ${playerName} went unsold`);
       }
       
-      // Save auction state
-      saveAuctionState();
+      // Reset bidding state
+      setCurrentBidder(null);
       
-      return soldPlayer;
-    } catch (error) {
-      console.error('Error completing bid:', error);
-      toast.error(error.message || 'Failed to complete bid');
-      throw error;
+      // Refresh to get next player
+      await refreshAuction(currentAuction.id);
+      
+      return updatedAuction;
+    } catch (err) {
+      console.error('Error completing bid:', err);
+      throw err;
     }
-  };
+  }, [currentAuction, currentPlayer, currentBid, currentBidder, refreshAuction]);
 
-  // Skip the current player
-  const skipPlayer = () => {
-    try {
-      if (!isAuctionActive) {
-        throw new Error('Auction is not active');
-      }
-      
-      if (!currentPlayer) {
-        throw new Error('No player available to skip');
-      }
-      
-      // Pause timer
-      pauseTimer();
-      
-      // Update remaining players list
-      setRemainingPlayers(prev => prev.filter(p => p.id !== currentPlayer.id));
-      
-      // Move to next player if available
-      const nextPlayer = getNextPlayer();
-      if (nextPlayer) {
-        setCurrentPlayer(nextPlayer);
-        setCurrentBid(nextPlayer.basePrice);
-        setCurrentBidder(null);
-        
-        // Reset timer
-        resetTimer();
-      } else {
-        // End auction if no more players
-        setIsAuctionActive(false);
-        setCurrentPlayer(null);
-        setCurrentBid(0);
-        setCurrentBidder(null);
-      }
-      
-      // Save auction state
-      saveAuctionState();
-      
-      return nextPlayer;
-    } catch (error) {
-      console.error('Error skipping player:', error);
-      toast.error(error.message || 'Failed to skip player');
-      throw error;
-    }
-  };
+  // Skip player
+ // Updated skipPlayer function
 
-  // Get the next player from the remaining players
-  const getNextPlayer = () => {
-    if (remainingPlayers.length === 0) {
-      return null;
+const skipPlayer = useCallback(async () => {
+  try {
+    if (!currentAuction) {
+      throw new Error('Auction not available');
     }
     
-    return remainingPlayers[0];
-  };
-
-  // Save current auction state to tournament
-  const saveAuctionState = () => {
-    if (!currentAuction) return;
+    // Ensure we have a proper player name, with fallbacks (same as completeBid)
+    const playerName = currentPlayer?.name || 
+                      currentPlayer?.fullName || 
+                      currentPlayer?.firstName ||
+                      "Unknown Player";
     
-    const updatedAuction = {
-      currentPlayer,
-      currentBid,
-      currentBidder,
-      timer,
-      history: auctionHistory,
-      lastUpdated: new Date().toISOString()
+    // Skip player
+    const updatedAuction = await auctionService.skipPlayer(currentAuction.id);
+    
+    // Add to history with more complete information
+    const skipEvent = {
+      id: `history-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      type: 'skipped',
+      playerId: currentPlayer?.id,
+      playerName: playerName, // Use robust player name
+      player: { ...currentPlayer, name: playerName }, // Include full player object
+      timestamp: Date.now()
     };
     
-    // Update tournament with new auction state
-    updateTournament(currentAuction.tournamentId, {
-      auction: updatedAuction,
-      players: [...remainingPlayers, ...soldPlayers],
-      teams: currentAuction.teams.map(team => {
-        const balance = teamBalances[team.id];
-        return {
-          ...team,
-          players: balance ? balance.players.map(p => p.id) : [],
-          spent: balance ? balance.spent : 0,
-          remaining: balance ? balance.remaining : team.budget
-        };
-      })
+    // Check for duplicates before adding to history (same as completeBid)
+    setAuctionHistory(prev => {
+      // Look for any recent duplicate events (same player + type combination)
+      const isDuplicate = prev.some(item => 
+        item.type === skipEvent.type && 
+        item.playerId === skipEvent.playerId &&
+        Date.now() - item.timestamp < 10000 // Within last 10 seconds
+      );
+      
+      // Only add if not a duplicate
+      return isDuplicate ? prev : [skipEvent, ...prev];
     });
-  };
-
-  // Start the auction
-  const startAuction = useCallback(() => {
-    if (!currentTournament) return;
     
-    setIsAuctionActive(true);
-    // Select first player
-    if (currentTournament.playerPool && currentTournament.playerPool.length > 0) {
-      setCurrentPlayer(currentTournament.playerPool[0]);
-      setCurrentBid(currentTournament.playerPool[0].basePrice || 0);
-      setTimer(30);
-      setAuctionHistory([]);
-    }
-  }, [currentTournament]);
-  // End the auction
-  const endAuction = () => {
-    try {
-      // Set auction inactive
-      setIsAuctionActive(false);
-      setCurrentPlayer(null);
-      setCurrentBid(0);
-      setCurrentBidder(null);
-      pauseTimer();
+    console.log(`Player ${playerName} was skipped`);
+    
+    // Reset bidding state
+    setCurrentBidder(null);
+    
+    // Refresh to get next player
+    await refreshAuction(currentAuction.id);
+    
+    return updatedAuction;
+  } catch (err) {
+    console.error('Error skipping player:', err);
+    throw err;
+  }
+}, [currentAuction, currentPlayer, refreshAuction]);
+
+  // Add this to the initialization logic in your AuctionContext provider
+const initializeTeamBalances = (teams) => {
+  if (!teams || !Array.isArray(teams)) return {};
+  
+  const balances = {};
+  
+  teams.forEach(team => {
+    if (team && team.id) {
+      // Convert from crores to actual amount if needed
+      const teamBudgetInCrores = team.budget || 0;
+      const teamBudget = teamBudgetInCrores > 100 ? teamBudgetInCrores : teamBudgetInCrores * 10000000;
       
-      // Save auction state
-      saveAuctionState();
-      
-      return true;
-    } catch (error) {
-      console.error('Error ending auction:', error);
-      toast.error(error.message || 'Failed to end auction');
-      throw error;
+      balances[team.id] = {
+        total: teamBudget,
+        spent: 0,
+        remaining: teamBudget,
+        players: []
+      };
     }
-  };
-  useEffect(() => {
-    if (!isAuctionActive) return;
-    
-    const timerId = setInterval(() => {
-      setTimer(prevTimer => {
-        if (prevTimer <= 0) {
-          // Handle timeout
-          return 0;
-        }
-        return prevTimer - 1;
-      });
-    }, 1000);
-    
-    return () => clearInterval(timerId);
-  }, [isAuctionActive]);
+  });
+  
+  return balances;
+};
 
-  // Handle timer reaching zero
-  useEffect(() => {
-    if (timer === 0 && currentPlayer && isAuctionActive) {
-      // Handle player auction completion
-      // This should be optimized to prevent excessive state changes
-    }
-  }, [timer, currentPlayer, isAuctionActive]);
-
-  const contextValue = {
+  const value = {
     currentAuction,
     currentPlayer,
     currentBid,
@@ -388,52 +360,31 @@ export const AuctionProvider = ({ children }) => {
     timer,
     isTimerRunning,
     auctionHistory,
-    remainingPlayers,
-    soldPlayers,
     teamBalances,
     isAuctionActive,
-    initializeAuction,
-    startTimer,
-    pauseTimer,
-    resetTimer,
+    isInitialized,
+    loading,
+    error,
+    initializeAuctionState,
+    refreshAuction,
+    startAuction,
     placeBid,
     completeBid,
     skipPlayer,
-    getNextPlayer,
-    saveAuctionState,
-    startAuction,
-    endAuction
+    initializeTeamBalances
   };
 
   return (
-    <AuctionContext.Provider value={{
-      isAuctionActive,
-      currentAuction,
-    currentPlayer,
-    currentBid,
-    currentBidder,
-    timer,
-    isTimerRunning,
-    auctionHistory,
-    remainingPlayers,
-    soldPlayers,
-    teamBalances,
-    isAuctionActive,
-    initializeAuction,
-    startTimer,
-    pauseTimer,
-    resetTimer,
-    placeBid,
-    completeBid,
-    skipPlayer,
-    getNextPlayer,
-    saveAuctionState,
-    startAuction,
-    endAuction
-      // other methods...
-    }}>
+    <AuctionContext.Provider value={value}>
       {children}
     </AuctionContext.Provider>
   );
-};
+}
 
+export function useAuction() {
+  const context = useContext(AuctionContext);
+  if (!context) {
+    throw new Error('useAuction must be used within an AuctionProvider');
+  }
+  return context;
+}

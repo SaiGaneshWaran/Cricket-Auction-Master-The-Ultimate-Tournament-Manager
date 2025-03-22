@@ -1,330 +1,385 @@
-// src/services/auctionService.js
 import { v4 as uuidv4 } from 'uuid';
-import { getFromStorage, saveToStorage } from '../utils/storage.js';
 
-const STORAGE_KEY = 'cricket_auction_data';
+// Storage keys
+const STORAGE_KEY = 'cricket_auctions';
+const TOURNAMENTS_KEY = 'cricket_tournaments';
 
-/**
- * Initialize a new auction for a tournament
- * @param {Object} tournamentData - The tournament data
- * @returns {Object} The initialized auction data
- */
+// Helper function to get from storage
+const getFromStorage = (key, defaultValue) => {
+  try {
+    const item = localStorage.getItem(key);
+    return item ? JSON.parse(item) : defaultValue;
+  } catch (error) {
+    console.error(`Error reading from localStorage (${key}):`, error);
+    return defaultValue;
+  }
+};
+
+// Helper function to save to storage
+const saveToStorage = (key, value) => {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (error) {
+    console.error(`Error writing to localStorage (${key}):`, error);
+  }
+};
+
+// Initialize an auction from tournament data
 export const initializeAuction = (tournamentData) => {
-  const auctionId = uuidv4();
-  const playerPool = tournamentData.playerPool.map(player => ({
-    ...player,
-    status: 'unsold',
-    currentBid: player.basePrice,
-    currentBidder: null,
-    bidHistory: []
-  }));
-
-  const auctionData = {
-    id: auctionId,
-    tournamentId: tournamentData.id,
-    status: 'waiting', // waiting, active, completed
-    playerPool,
-    currentPlayerIndex: -1,
-    currentPlayer: null,
-    teams: tournamentData.teams.map(team => ({
-      ...team,
-      budget: team.budget,
-      playersAcquired: [],
-      connected: false
-    })),
-    history: [],
-    timerDuration: 15, // seconds
-    timerStart: null,
-    captainCode: generateSixDigitCode(),
-    viewerCode: generateSixDigitCode()
-  };
-
-  saveToStorage(`${STORAGE_KEY}_${auctionId}`, auctionData);
-  return auctionData;
-};
-
-/**
- * Start the auction
- * @param {string} auctionId - The auction ID
- * @returns {Object} The updated auction data
- */
-export const startAuction = (auctionId) => {
-  const auctionData = getFromStorage(`${STORAGE_KEY}_${auctionId}`);
-  
-  if (!auctionData) {
-    throw new Error('Auction not found');
-  }
-
-  if (auctionData.status !== 'waiting') {
-    throw new Error('Auction already started or completed');
-  }
-
-  const updatedAuction = {
-    ...auctionData,
-    status: 'active',
-    currentPlayerIndex: 0,
-    currentPlayer: auctionData.playerPool[0],
-    timerStart: Date.now()
-  };
-
-  saveToStorage(`${STORAGE_KEY}_${auctionId}`, updatedAuction);
-  return updatedAuction;
-};
-
-/**
- * Join an auction as a team captain
- * @param {string} captainCode - The captain access code
- * @param {string} teamId - The team ID
- * @returns {Object} The auction data
- */
-export const joinAuctionAsCaptain = (captainCode, teamId) => {
-  // Find the auction with the matching captain code
-  const allAuctions = getAllAuctions();
-  const auction = allAuctions.find(a => a.captainCode === captainCode);
-  
-  if (!auction) {
-    throw new Error('Invalid captain code');
-  }
-
-  const team = auction.teams.find(t => t.id === teamId);
-  
-  if (!team) {
-    throw new Error('Team not found');
-  }
-
-  if (team.connected) {
-    throw new Error('Team already connected');
-  }
-
-  // Update team connection status
-  const updatedTeams = auction.teams.map(t => 
-    t.id === teamId ? { ...t, connected: true } : t
-  );
-
-  const updatedAuction = {
-    ...auction,
-    teams: updatedTeams
-  };
-
-  saveToStorage(`${STORAGE_KEY}_${auction.id}`, updatedAuction);
-  return updatedAuction;
-};
-
-/**
- * Join an auction as a viewer
- * @param {string} viewerCode - The viewer access code
- * @returns {Object} The auction data
- */
-export const joinAuctionAsViewer = (viewerCode) => {
-  // Find the auction with the matching viewer code
-  const allAuctions = getAllAuctions();
-  const auction = allAuctions.find(a => a.viewerCode === viewerCode);
-  
-  if (!auction) {
-    throw new Error('Invalid viewer code');
-  }
-
-  return auction;
-};
-
-/**
- * Place a bid in the auction
- * @param {string} auctionId - The auction ID
- * @param {string} playerId - The player ID
- * @param {string} teamId - The team ID
- * @param {number} bidAmount - The bid amount
- * @returns {Object} The updated auction data
- */
-export const placeBid = (auctionId, playerId, teamId, bidAmount) => {
-  const auctionData = getFromStorage(`${STORAGE_KEY}_${auctionId}`);
-  
-  if (!auctionData) {
-    throw new Error('Auction not found');
-  }
-
-  if (auctionData.status !== 'active') {
-    throw new Error('Auction not active');
-  }
-
-  if (auctionData.currentPlayer.id !== playerId) {
-    throw new Error('Not the current player');
-  }
-
-  const team = auctionData.teams.find(t => t.id === teamId);
-  
-  if (!team) {
-    throw new Error('Team not found');
-  }
-
-  if (!team.connected) {
-    throw new Error('Team not connected');
-  }
-
-  if (team.budget < bidAmount) {
-    throw new Error('Insufficient budget');
-  }
-
-  // Check if bid is higher than current bid
-  if (bidAmount <= auctionData.currentPlayer.currentBid) {
-    throw new Error('Bid must be higher than current bid');
-  }
-
-  // Update current player
-  const updatedPlayerPool = auctionData.playerPool.map(player => 
-    player.id === playerId 
-      ? { 
-          ...player, 
-          currentBid: bidAmount, 
-          currentBidder: teamId,
-          bidHistory: [...player.bidHistory, { teamId, amount: bidAmount, timestamp: Date.now() }]
-        } 
-      : player
-  );
-
-  const updatedAuction = {
-    ...auctionData,
-    playerPool: updatedPlayerPool,
-    currentPlayer: {
-      ...auctionData.currentPlayer,
-      currentBid: bidAmount,
-      currentBidder: teamId,
-      bidHistory: [...auctionData.currentPlayer.bidHistory, { teamId, amount: bidAmount, timestamp: Date.now() }]
-    },
-    timerStart: Date.now() // Reset timer
-  };
-
-  saveToStorage(`${STORAGE_KEY}_${auctionId}`, updatedAuction);
-  return updatedAuction;
-};
-
-/**
- * Complete the current player auction
- * @param {string} auctionId - The auction ID
- * @returns {Object} The updated auction data
- */
-export const completePlayerAuction = (auctionId) => {
-  const auctionData = getFromStorage(`${STORAGE_KEY}_${auctionId}`);
-  
-  if (!auctionData) {
-    throw new Error('Auction not found');
-  }
-
-  if (auctionData.status !== 'active') {
-    throw new Error('Auction not active');
-  }
-
-  const currentPlayer = auctionData.currentPlayer;
-  
-  // If player was sold
-  if (currentPlayer.currentBidder) {
-    const teamIndex = auctionData.teams.findIndex(t => t.id === currentPlayer.currentBidder);
+  try {
+    console.log('Initializing auction for tournament:', tournamentData.id);
     
-    if (teamIndex === -1) {
-      throw new Error('Bidding team not found');
+    // Check if an auction already exists for this tournament
+    const existingAuction = getAuctionByTournamentId(tournamentData.id);
+    
+    if (existingAuction) {
+      console.log('Using existing auction:', existingAuction.id);
+      return existingAuction;
     }
-
-    // Update team budget and add player to team
-    const updatedTeams = [...auctionData.teams];
-    updatedTeams[teamIndex] = {
-      ...updatedTeams[teamIndex],
-      budget: updatedTeams[teamIndex].budget - currentPlayer.currentBid,
-      playersAcquired: [...updatedTeams[teamIndex].playersAcquired, {
-        ...currentPlayer,
-        purchasePrice: currentPlayer.currentBid
-      }]
-    };
-
-    // Update player status
-    const updatedPlayerPool = auctionData.playerPool.map(player => 
-      player.id === currentPlayer.id 
-        ? { ...player, status: 'sold', soldTo: currentPlayer.currentBidder, soldPrice: currentPlayer.currentBid } 
-        : player
-    );
-
-    // Add to history
-    const historyEntry = {
-      playerId: currentPlayer.id,
-      playerName: currentPlayer.name,
-      basePrice: currentPlayer.basePrice,
-      soldPrice: currentPlayer.currentBid,
-      soldTo: currentPlayer.currentBidder,
-      timestamp: Date.now()
-    };
-
-    // Check if all players are sold
-    const nextPlayerIndex = auctionData.currentPlayerIndex + 1;
-    const isAuctionComplete = nextPlayerIndex >= auctionData.playerPool.length;
     
-    const updatedAuction = {
-      ...auctionData,
-      playerPool: updatedPlayerPool,
-      teams: updatedTeams,
-      history: [...auctionData.history, historyEntry],
-      currentPlayerIndex: nextPlayerIndex,
-      currentPlayer: isAuctionComplete ? null : auctionData.playerPool[nextPlayerIndex],
-      status: isAuctionComplete ? 'completed' : 'active',
-      timerStart: isAuctionComplete ? null : Date.now()
-    };
-
-    saveToStorage(`${STORAGE_KEY}_${auctionId}`, updatedAuction);
-    return updatedAuction;
-  } else {
-    // Player unsold
-    const updatedPlayerPool = auctionData.playerPool.map(player => 
-      player.id === currentPlayer.id ? { ...player, status: 'unsold' } : player
-    );
-
-    // Add to history
-    const historyEntry = {
-      playerId: currentPlayer.id,
-      playerName: currentPlayer.name,
-      basePrice: currentPlayer.basePrice,
-      status: 'unsold',
-      timestamp: Date.now()
-    };
-
-    // Check if all players are processed
-    const nextPlayerIndex = auctionData.currentPlayerIndex + 1;
-    const isAuctionComplete = nextPlayerIndex >= auctionData.playerPool.length;
+    console.log('Creating new auction for tournament:', tournamentData.id);
     
-    const updatedAuction = {
-      ...auctionData,
-      playerPool: updatedPlayerPool,
-      history: [...auctionData.history, historyEntry],
-      currentPlayerIndex: nextPlayerIndex,
-      currentPlayer: isAuctionComplete ? null : auctionData.playerPool[nextPlayerIndex],
-      status: isAuctionComplete ? 'completed' : 'active',
-      timerStart: isAuctionComplete ? null : Date.now()
+    // Create a new auction
+    const auctionId = uuidv4();
+    const playerPool = Array.isArray(tournamentData.players) ? 
+      tournamentData.players.map(player => ({
+        ...player,
+        currentBid: player.basePrice || 100000,  // Default to 1 Lakh if no base price
+        currentBidder: null,
+        status: 'pending'
+      })) : [];
+    
+    // Sort player pool by role and base price
+    playerPool.sort((a, b) => {
+      // First sort by role importance
+      const roleOrder = { 'batsman': 0, 'wicketKeeper': 1, 'allRounder': 2, 'bowler': 3 };
+      const roleDiff = (roleOrder[a.role] || 0) - (roleOrder[b.role] || 0);
+      
+      if (roleDiff !== 0) return roleDiff;
+      
+      // Then by base price (highest first)
+      return (b.basePrice || 0) - (a.basePrice || 0);
+    });
+    
+    // Create auction object
+    const auction = {
+      id: auctionId,
+      tournamentId: tournamentData.id,
+      status: 'initialized', // initialized, active, completed
+      teams: Array.isArray(tournamentData.teams) ? 
+        tournamentData.teams.map(team => ({
+          id: team.id,
+          name: team.name,
+          color: team.color || '#1976d2',
+          budget: team.budget || 10000000, // Default 1 crore if not specified
+          players: []
+        })) : [],
+      playerPool,
+      currentPlayer: playerPool.length > 0 ? playerPool[0] : null,
+      currentIndex: 0,
+      timerDuration: 15, // seconds
+      timerStart: null,
+      history: [],
+      createdAt: Date.now(),
+      lastSyncTime: Date.now()
     };
-
-    saveToStorage(`${STORAGE_KEY}_${auctionId}`, updatedAuction);
-    return updatedAuction;
+    
+    console.log('Auction created:', auction.id);
+    console.log('Player pool size:', auction.playerPool.length);
+    console.log('Teams:', auction.teams.map(t => t.name).join(', '));
+    
+    // Save the auction
+    saveAuction(auction);
+    
+    return auction;
+  } catch (error) {
+    console.error('Error initializing auction:', error);
+    throw new Error('Failed to initialize auction: ' + error.message);
   }
 };
 
-/**
- * Get auction data by ID
- * @param {string} auctionId - The auction ID
- * @returns {Object} The auction data
- */
+// Helper function to save auction
+const saveAuction = (auction) => {
+  try {
+    const auctions = getFromStorage(STORAGE_KEY, {});
+    auctions[auction.id] = auction;
+    saveToStorage(STORAGE_KEY, auctions);
+    return true;
+  } catch (error) {
+    console.error('Error saving auction:', error);
+    throw new Error('Failed to save auction');
+  }
+};
+
+// Get auction by tournament ID
+export const getAuctionByTournamentId = (tournamentId) => {
+  try {
+    const auctions = getFromStorage(STORAGE_KEY, {});
+    return Object.values(auctions).find(auction => 
+      auction && auction.tournamentId === tournamentId
+    ) || null;
+  } catch (error) {
+    console.error('Error getting auction by tournament ID:', error);
+    return null;
+  }
+};
+
+// Get auction by ID
 export const getAuctionById = (auctionId) => {
-  return getFromStorage(`${STORAGE_KEY}_${auctionId}`);
+  try {
+    const auctions = getFromStorage(STORAGE_KEY, {});
+    return auctions[auctionId] || null;
+  } catch (error) {
+    console.error('Error getting auction by ID:', error);
+    return null;
+  }
 };
 
-/**
- * Get all auctions
- * @returns {Array} All auctions
- */
-export const getAllAuctions = () => {
-  // Get all keys from localStorage that start with STORAGE_KEY
-  const keys = Object.keys(localStorage).filter(key => key.startsWith(STORAGE_KEY));
-  return keys.map(key => getFromStorage(key));
+// Start the auction
+export const startAuction = async (auctionId) => {
+  try {
+    console.log('Starting auction:', auctionId);
+    const auction = getAuctionById(auctionId);
+    if (!auction) {
+      throw new Error('Auction not found: ' + auctionId);
+    }
+    
+    // Update status and timer
+    const updatedAuction = {
+      ...auction,
+      status: 'active',
+      timerStart: Date.now(),
+      lastSyncTime: Date.now()
+    };
+    
+    // Save updated auction
+    saveAuction(updatedAuction);
+    console.log('Auction started successfully:', auctionId);
+    
+    return updatedAuction;
+  } catch (error) {
+    console.error('Error starting auction:', error);
+    throw error;
+  }
 };
 
-/**
- * Generate a random 6-digit code
- * @returns {string} A 6-digit code
- */
-const generateSixDigitCode = () => {
-  return Math.floor(100000 + Math.random() * 900000).toString();
+// Place a bid
+export const placeBid = async (auctionId, playerId, teamId, bidAmount) => {
+  try {
+    const auction = getAuctionById(auctionId);
+    if (!auction) {
+      throw new Error('Auction not found');
+    }
+    
+    // Find the current player
+    const currentPlayer = auction.currentPlayer;
+    if (!currentPlayer || currentPlayer.id !== playerId) {
+      throw new Error('Invalid player for bidding');
+    }
+    
+    // Update player with new bid
+    const updatedAuction = {
+      ...auction,
+      currentPlayer: {
+        ...currentPlayer,
+        currentBid: bidAmount,
+        currentBidder: teamId
+      },
+      lastSyncTime: Date.now()
+    };
+    
+    // Add to history
+    updatedAuction.history = [
+      ...(auction.history || []),
+      {
+        type: 'bid',
+        playerId,
+        teamId,
+        amount: bidAmount,
+        timestamp: Date.now()
+      }
+    ];
+    
+    // Save updated auction
+    saveAuction(updatedAuction);
+    
+    return updatedAuction;
+  } catch (error) {
+    console.error('Error placing bid:', error);
+    throw error;
+  }
+};
+
+// Complete player auction
+export const completePlayerAuction = async (auctionId) => {
+  try {
+    const auction = getAuctionById(auctionId);
+    if (!auction) {
+      throw new Error('Auction not found');
+    }
+    
+    const currentPlayer = auction.currentPlayer;
+    if (!currentPlayer) {
+      throw new Error('No current player');
+    }
+    
+    // Update player status
+    const wasSold = currentPlayer.currentBidder != null;
+    
+    // Update player pool with the current player's status
+    const updatedPool = auction.playerPool.map(player => {
+      if (player.id === currentPlayer.id) {
+        return {
+          ...player,
+          status: wasSold ? 'sold' : 'unsold',
+          soldTo: wasSold ? currentPlayer.currentBidder : null,
+          finalPrice: wasSold ? currentPlayer.currentBid : 0
+        };
+      }
+      return player;
+    });
+    
+    // Update team players if sold
+    const updatedTeams = [...auction.teams];
+    if (wasSold) {
+      const teamIndex = updatedTeams.findIndex(t => t.id === currentPlayer.currentBidder);
+      if (teamIndex >= 0) {
+        updatedTeams[teamIndex] = {
+          ...updatedTeams[teamIndex],
+          players: [
+            ...(updatedTeams[teamIndex].players || []),
+            {
+              id: currentPlayer.id,
+              name: currentPlayer.name,
+              role: currentPlayer.role,
+              price: currentPlayer.currentBid
+            }
+          ]
+        };
+      }
+    }
+    
+    // Move to next player
+    const nextIndex = auction.currentIndex + 1;
+    const nextPlayer = nextIndex < updatedPool.length ? updatedPool[nextIndex] : null;
+    
+    // Update auction
+    const updatedAuction = {
+      ...auction,
+      playerPool: updatedPool,
+      teams: updatedTeams,
+      currentIndex: nextIndex,
+      currentPlayer: nextPlayer,
+      status: nextPlayer ? 'active' : 'completed',
+      lastSyncTime: Date.now(),
+      history: [
+        ...(auction.history || []),
+        {
+          type: wasSold ? 'sold' : 'unsold',
+          playerId: currentPlayer.id,
+          teamId: wasSold ? currentPlayer.currentBidder : null,
+          amount: wasSold ? currentPlayer.currentBid : 0,
+          timestamp: Date.now()
+        }
+      ]
+    };
+    
+    // Save updated auction
+    saveAuction(updatedAuction);
+    
+    return updatedAuction;
+  } catch (error) {
+    console.error('Error completing player auction:', error);
+    throw error;
+  }
+};
+
+// Skip player
+export const skipPlayer = async (auctionId) => {
+  try {
+    const auction = getAuctionById(auctionId);
+    if (!auction) {
+      throw new Error('Auction not found');
+    }
+    
+    const currentPlayer = auction.currentPlayer;
+    if (!currentPlayer) {
+      throw new Error('No current player');
+    }
+    
+    // Update player pool
+    const updatedPool = auction.playerPool.map(player => {
+      if (player.id === currentPlayer.id) {
+        return {
+          ...player,
+          status: 'skipped'
+        };
+      }
+      return player;
+    });
+    
+    // Move to next player
+    const nextIndex = auction.currentIndex + 1;
+    const nextPlayer = nextIndex < updatedPool.length ? updatedPool[nextIndex] : null;
+    
+    // Update auction
+    const updatedAuction = {
+      ...auction,
+      playerPool: updatedPool,
+      currentIndex: nextIndex,
+      currentPlayer: nextPlayer,
+      status: nextPlayer ? 'active' : 'completed',
+      lastSyncTime: Date.now(),
+      history: [
+        ...(auction.history || []),
+        {
+          type: 'skipped',
+          playerId: currentPlayer.id,
+          timestamp: Date.now()
+        }
+      ]
+    };
+    
+    // Save updated auction
+    saveAuction(updatedAuction);
+    
+    return updatedAuction;
+  } catch (error) {
+    console.error('Error skipping player:', error);
+    throw error;
+  }
+};
+
+// Calculate team balances
+export const getTeamBalances = (auction) => {
+  const balances = {};
+  
+  if (!auction || !Array.isArray(auction.teams)) {
+    return balances;
+  }
+  
+  auction.teams.forEach(team => {
+    const totalBudget = parseFloat(team.budget) || 10000000; // Default 1 crore
+    const spent = Array.isArray(team.players) ? 
+      team.players.reduce((sum, player) => sum + (parseFloat(player.price) || 0), 0) : 0;
+    
+    balances[team.id] = {
+      total: totalBudget,
+      spent: spent,
+      remaining: totalBudget - spent
+    };
+  });
+  
+  return balances;
+};
+
+export default {
+  initializeAuction,
+  getAuctionByTournamentId,
+  getAuctionById,
+  startAuction,
+  placeBid,
+  completePlayerAuction,
+  skipPlayer,
+  getTeamBalances
 };
