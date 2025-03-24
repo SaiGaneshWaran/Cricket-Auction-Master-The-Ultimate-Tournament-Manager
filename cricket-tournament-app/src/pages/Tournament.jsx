@@ -406,7 +406,7 @@ const refreshTournamentData = async () => {
                
 
 
-                // Add this right after rendering the tournament details, before showing teams
+                
 {process.env.NODE_ENV === 'development' && isCreator && tournament.status === 'pre-auction' && (
   <div className="bg-red-900 bg-opacity-40 p-4 rounded-lg border border-red-800 mb-6">
     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between">
