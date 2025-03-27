@@ -1158,7 +1158,7 @@ export const updatePlayerAllocation = (tournamentId, auctionData) => {
     
     return updatedTournament;
   } catch (error) {
-    console.error('Error updating player allocation', error);
+    console.error('Error updating player allocation:', error);
     throw error;
   }
 };
